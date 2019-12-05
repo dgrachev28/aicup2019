@@ -1,0 +1,1 @@
+zip -r solution.zip *.cpp *.hpp model/*.cpp model/*.hpp
