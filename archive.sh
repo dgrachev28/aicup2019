@@ -1,1 +1,1 @@
-zip -r solution.zip *.cpp *.hpp model/*.cpp model/*.hpp
+zip -r solution.zip CMakeLists.txt *.cpp *.hpp model/*.cpp model/*.hpp

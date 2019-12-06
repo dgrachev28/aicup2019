@@ -4,17 +4,36 @@
 #include "Util.hpp"
 #include <algorithm>
 
-Simulation::Simulation(Game game) : game(std::move(game)) {
-    microTicks = game.properties.updatesPerTick;
-}
-
-Simulation::Simulation(Game game, int microTicks) : game(std::move(game)), microTicks(microTicks) {
+Simulation::Simulation(Game game, bool simMove, bool simBullets, bool simShoot, int microTicks)
+    : game(std::move(game)), microTicks(microTicks), simMove(simMove), simBullets(simBullets), simShoot(simShoot) {
 }
 
 std::unordered_map<int, Unit> Simulation::simulate(const UnitAction& action, std::unordered_map<int, Unit> units, int unitId) {
+    if (units[unitId].weapon && simShoot) {
+        double deltaAngle = fabs(*(units[unitId].weapon->lastAngle) - atan2(action.aim.y, action.aim.x));
+        if (deltaAngle > M_PI_2) {
+            deltaAngle = fabs(deltaAngle - M_PI);
+        }
+        if (deltaAngle > M_PI_2) {
+            deltaAngle = fabs(deltaAngle - M_PI);
+        }
+        units[unitId].weapon->spread += deltaAngle;
+        units[unitId].weapon->spread = std::clamp(
+            units[unitId].weapon->spread,
+            units[unitId].weapon->params.minSpread,
+            units[unitId].weapon->params.maxSpread
+        );
+    }
     for (int i = 0; i < microTicks; ++i) {
-        units[unitId] = move(action, units[unitId]);
-        units = simulateBullets(units);
+        if (simMove) {
+            units[unitId] = move(action, units[unitId]);
+        }
+        if (simBullets) {
+            units = simulateBullets(units);
+        }
+        if (simShoot) {
+            units[unitId] = simulateShoot(action, units[unitId]);
+        }
     }
     return units;
 }
@@ -166,4 +185,32 @@ std::unordered_map<int, Unit> Simulation::explode(const Bullet& bullet,
         }
     }
     return units;
+}
+
+Unit Simulation::simulateShoot(const UnitAction& action, Unit unit) {
+    if (!unit.weapon) {
+        return unit;
+    }
+    if (!action.shoot || *(unit.weapon->fireTimer) > 1e-9) {
+        *(unit.weapon->fireTimer) -= 1 / (game.properties.ticksPerSecond * microTicks);
+        unit.weapon->spread -= unit.weapon->params.aimSpeed / (game.properties.ticksPerSecond * microTicks);
+        unit.weapon->spread = std::clamp(unit.weapon->spread, unit.weapon->params.minSpread, unit.weapon->params.maxSpread);
+    } else {
+        if (--unit.weapon->magazine == 0) {
+            unit.weapon->magazine = unit.weapon->params.magazineSize;
+            *(unit.weapon->fireTimer) = unit.weapon->params.reloadTime;
+        } else {
+            *(unit.weapon->fireTimer) = unit.weapon->params.fireRate;
+        }
+        unit.weapon->spread += unit.weapon->params.recoil;
+        unit.weapon->spread = std::clamp(unit.weapon->spread, unit.weapon->params.minSpread, unit.weapon->params.maxSpread);
+//        if (unit.weapon->typ == ASSAULT_RIFLE) {
+//            unit.weapon->spread -= unit.weapon->params.aimSpeed / (game.properties.ticksPerSecond * microTicks);
+//            unit.weapon->spread = std::clamp(unit.weapon->spread,
+//                                             unit.weapon->params.minSpread,
+//                                             unit.weapon->params.maxSpread);
+//        }
+        unit.weapon->lastFireTick = std::make_shared<int>(game.currentTick);
+    }
+    return unit;
 }

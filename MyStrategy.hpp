@@ -16,10 +16,17 @@ public:
 
     std::optional<UnitAction> avoidBullets(const Unit& unit, const Game& game, Debug& debug);
 
+    bool shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug& debug);
+
 private:
     std::optional<Simulation> simulation;
     std::optional<Unit> nextUnit;
     std::optional<UnitAction> prevAction;
+};
+
+struct Damage {
+    int me;
+    int enemy;
 };
 
 #endif

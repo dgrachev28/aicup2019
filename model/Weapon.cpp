@@ -68,13 +68,13 @@ void Weapon::writeTo(OutputStream& stream) const {
 }
 std::string Weapon::toString() const {
     return std::string("Weapon") + "(" +
-        "TODO" + 
-        params.toString() +
-        std::to_string(magazine) +
-        (wasShooting ? "true" : "false") + 
-        std::to_string(spread) +
-        "TODO" + 
-        "TODO" + 
-        "TODO" + 
+//        "TODO" + "," +
+//        params.toString() + "," +
+        std::to_string(magazine) + "," +
+        (wasShooting ? "true" : "false") + "," +
+        std::to_string(spread) + "," +
+        (fireTimer ? std::to_string(*fireTimer) : "") + "," +
+        (lastAngle ? std::to_string(*lastAngle) : "") + "," +
+        (lastFireTick ? std::to_string(*lastFireTick) : "") + "," +
         ")";
 }

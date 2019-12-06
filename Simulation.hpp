@@ -7,8 +7,13 @@
 
 class Simulation {
 public:
-    explicit Simulation(Game game);
-    Simulation(Game game, int microTicks);
+    explicit Simulation(
+        Game game,
+        bool simMove = true,
+        bool simBullets = true,
+        bool simShoot = true,
+        int microTicks = 100
+    );
 
     std::unordered_map<int, Unit> simulate(const UnitAction& action, std::unordered_map<int, Unit> units, int unitId);
 
@@ -24,11 +29,17 @@ private:
                                           std::unordered_map<int, Unit> units,
                                           std::optional<int> unitId);
 
+    Unit simulateShoot(const UnitAction& action, Unit unit);
+
 public:
     Game game;
     std::vector<Bullet> bullets;
 private:
     int microTicks;
+
+    bool simMove;
+    bool simBullets;
+    bool simShoot;
 };
 
 
