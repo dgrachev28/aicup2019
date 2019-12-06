@@ -77,7 +77,8 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
                || (unit.position.x > nearestEnemy->position.x && nearestEnemy->position.x > nearestHealthPack->position.x))) {
         targetPos = nearestHealthPack->position;
     } else if (nearestEnemy != nullptr) {
-        if (distanceSqr(unit.position, nearestEnemy->position) > 81.0) {
+        double desiredDistance = (nearestEnemy->weapon && nearestEnemy->weapon->typ == ROCKET_LAUNCHER) ? 81.0 : 36.0;
+        if (distanceSqr(unit.position, nearestEnemy->position) > desiredDistance) {
             targetPos = nearestEnemy->position;
         } else {
             targetPos = unit.position.x > nearestEnemy->position.x ? Vec2Double(50.0, 50.0) : Vec2Double(0.0, 50.0);
@@ -87,8 +88,14 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
         std::string("Target pos: ") + targetPos.toString()));
     Vec2Double aim = Vec2Double(0, 0);
     if (nearestEnemy != nullptr) {
+        double aimY = nearestEnemy->position.y;
+        if (!nearestEnemy->jumpState.canJump && nearestEnemy->jumpState.maxTime < 1e-9) {
+            aimY -= 0.3 * nearestEnemy->size.y;
+        } else {
+            aimY += 0.3 * nearestEnemy->size.y;
+        }
         aim = Vec2Double(nearestEnemy->position.x - unit.position.x,
-                         nearestEnemy->position.y - unit.position.y);
+                         aimY - unit.position.y);
     }
     bool jump = targetPos.y > unit.position.y;
     if (targetPos.x > unit.position.x &&
@@ -154,20 +161,16 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit, const Game&
     int worstHealth = unit.health;
     for (const auto& actionSet : actionSets) {
         Simulation sim(game, true, true, false);
-        sim.bullets = game.bullets;
-        std::unordered_map<int, Unit> units;
-        for (const Unit& u : game.units) {
-            units[u.id] = u;
-        }
         for (const UnitAction& action : actionSet) {
-            units = sim.simulate(action, units, unit.id);
+            sim.simulate(action, unit.id);
         }
 
-        if (units[unit.id].health < worstHealth) {
-            worstHealth = units[unit.id].health;
+        const Unit& myUnit = sim.units[unit.id];
+        if (myUnit.health < worstHealth) {
+            worstHealth = myUnit.health;
         }
-        if (units[unit.id].health > bestHealth) {
-            bestHealth = units[unit.id].health;
+        if (myUnit.health > bestHealth) {
+            bestHealth = myUnit.health;
             bestAction = actionSet[0];
         }
     }
@@ -195,8 +198,7 @@ bool MyStrategy::shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug&
 
     std::vector<Damage> damages;
     for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
-        Simulation sim(game, false, true, false);
-        sim.bullets = game.bullets;
+        Simulation sim(game, false, true, false, 5);
 
         auto bulletPos = unit.position;
         bulletPos.y += unit.size.y / 2;
@@ -219,11 +221,12 @@ bool MyStrategy::shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug&
             units[u.id] = u;
         }
         for (int j = 0; j < 30; ++j) {
-            units = sim.simulate(UnitAction(), units, unit.id);
+            sim.simulate(UnitAction(), unit.id);
             if (sim.bullets.empty()) {
                 break;
             }
         }
+        units = sim.units;
         Damage damage{};
         for (const Unit& u : game.units) {
             if (u.id == unit.id) {

@@ -6,9 +6,14 @@
 
 Simulation::Simulation(Game game, bool simMove, bool simBullets, bool simShoot, int microTicks)
     : game(std::move(game)), microTicks(microTicks), simMove(simMove), simBullets(simBullets), simShoot(simShoot) {
+
+    bullets = this->game.bullets;
+    for (const Unit& u : this->game.units) {
+        units[u.id] = u;
+    }
 }
 
-std::unordered_map<int, Unit> Simulation::simulate(const UnitAction& action, std::unordered_map<int, Unit> units, int unitId) {
+void Simulation::simulate(const UnitAction& action, int unitId) {
     if (units[unitId].weapon && simShoot) {
         double deltaAngle = fabs(*(units[unitId].weapon->lastAngle) - atan2(action.aim.y, action.aim.x));
         if (deltaAngle > M_PI_2) {
@@ -26,26 +31,25 @@ std::unordered_map<int, Unit> Simulation::simulate(const UnitAction& action, std
     }
     for (int i = 0; i < microTicks; ++i) {
         if (simMove) {
-            units[unitId] = move(action, units[unitId]);
+            move(action, unitId);
         }
         if (simBullets) {
-            units = simulateBullets(units);
+            simulateBullets();
         }
         if (simShoot) {
             units[unitId] = simulateShoot(action, units[unitId]);
         }
     }
-    return units;
 }
 
-Unit Simulation::move(const UnitAction& action, Unit unit) {
-    unit = moveX(action, unit);
-    unit = moveY(action, unit);
+void Simulation::move(const UnitAction& action, int unitId) {
+    moveX(action, unitId);
+    moveY(action, unitId);
     // TODO: check collision with other units in moveX and moveY
-    return unit;
 }
 
-Unit Simulation::moveX(const UnitAction& action, Unit unit) {
+void Simulation::moveX(const UnitAction& action, int unitId) {
+    Unit& unit = units[unitId];
     const double vel = std::clamp(
         action.velocity,
         -game.properties.unitMaxHorizontalSpeed,
@@ -66,15 +70,14 @@ Unit Simulation::moveX(const UnitAction& action, Unit unit) {
             unit.position.x = int(unit.position.x + 1) - unit.size.x / 2;
         }
     }
-
-    return unit;
 }
 
-Unit Simulation::moveY(const UnitAction& action, Unit unit) {
+void Simulation::moveY(const UnitAction& action, int unitId) {
+    Unit& unit = units[unitId];
     bool padCollision = checkJumpPadCollision(unit, game);
     if (!padCollision && !areSame(unit.jumpState.speed, game.properties.jumpPadJumpSpeed)
         && (!unit.jumpState.canJump || !action.jump)) { // падение вниз
-        return fallDown(action, unit);
+        return fallDown(action, unitId);
     }
     if (game.currentTick == 0) { // первый тик
         unit.jumpState = JumpState(true, game.properties.unitJumpSpeed, game.properties.unitJumpTime, true);
@@ -87,7 +90,7 @@ Unit Simulation::moveY(const UnitAction& action, Unit unit) {
     if (!unit.jumpState.canCancel) { // прыжок с батута
         if (areSame(unit.jumpState.maxTime, 0.0)) {
             unit.jumpState = JumpState(false, 0.0, 0.0, false);
-            fallDown(action, unit);
+            fallDown(action, unitId);
         } else {
             unit.jumpState.maxTime -= 1 / (game.properties.ticksPerSecond * microTicks);
             const double moveDistance = game.properties.jumpPadJumpSpeed / (game.properties.ticksPerSecond * microTicks);
@@ -100,12 +103,12 @@ Unit Simulation::moveY(const UnitAction& action, Unit unit) {
                 unit.position.y += moveDistance;
             }
         }
-        return unit;
+        return;
     }
     if (action.jump) { // прыжок с земли
         if (areSame(unit.jumpState.maxTime, 0.0)) {
             unit.jumpState = JumpState(false, 0.0, 0.0, false);
-            fallDown(action, unit);
+            fallDown(action, unitId);
         } else {
             unit.jumpState.maxTime -= 1 / (game.properties.ticksPerSecond * microTicks);
             const double moveDistance = game.properties.unitJumpSpeed / (game.properties.ticksPerSecond  * microTicks);
@@ -119,10 +122,10 @@ Unit Simulation::moveY(const UnitAction& action, Unit unit) {
             }
         }
     }
-    return unit;
 }
 
-Unit Simulation::fallDown(const UnitAction& action, Unit unit) {
+void Simulation::fallDown(const UnitAction& action, int unitId) {
+    Unit& unit = units[unitId];
     const double moveDistance = game.properties.unitFallSpeed / (game.properties.ticksPerSecond * microTicks);
 
     auto unitRect = Rect(unit);
@@ -134,10 +137,9 @@ Unit Simulation::fallDown(const UnitAction& action, Unit unit) {
     } else {
         unit.position.y -= moveDistance;
     }
-    return unit;
 }
 
-std::unordered_map<int, Unit> Simulation::simulateBullets(std::unordered_map<int, Unit> units) {
+void Simulation::simulateBullets() {
     std::vector<Bullet> updatedBullets;
     for (Bullet bullet : bullets) {
         // TODO: should I check unit collision here before bullet movement?
@@ -145,13 +147,13 @@ std::unordered_map<int, Unit> Simulation::simulateBullets(std::unordered_map<int
         bullet.position.y += bullet.velocity.y / (game.properties.ticksPerSecond * microTicks);
         Rect bulletRect(bullet);
         if (checkWallCollision(bulletRect, game)) {
-            units = explode(bullet, units, std::nullopt);
+            explode(bullet, std::nullopt);
             continue;
         }
         bool exploded = false;
         for (const auto& [unitId, unit]: units) {
             if (intersectRects(bulletRect, Rect(unit)) && bullet.unitId != unitId) {
-                units = explode(bullet, units, unitId);
+                explode(bullet, unitId);
                 exploded = true;
                 break;
             }
@@ -161,12 +163,10 @@ std::unordered_map<int, Unit> Simulation::simulateBullets(std::unordered_map<int
         }
     }
     bullets = updatedBullets;
-    return units;
 }
 
-std::unordered_map<int, Unit> Simulation::explode(const Bullet& bullet,
-                                                  std::unordered_map<int, Unit> units,
-                                                  std::optional<int> unitId) {
+void Simulation::explode(const Bullet& bullet,
+                         std::optional<int> unitId) {
     if (unitId) {
         units[*unitId].health -= bullet.damage;
     }
@@ -184,7 +184,6 @@ std::unordered_map<int, Unit> Simulation::explode(const Bullet& bullet,
             }
         }
     }
-    return units;
 }
 
 Unit Simulation::simulateShoot(const UnitAction& action, Unit unit) {

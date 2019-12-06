@@ -15,25 +15,25 @@ public:
         int microTicks = 100
     );
 
-    std::unordered_map<int, Unit> simulate(const UnitAction& action, std::unordered_map<int, Unit> units, int unitId);
+    void simulate(const UnitAction& action, int unitId);
 
 private:
-    Unit move(const UnitAction& action, Unit unit);
-    Unit moveX(const UnitAction& action, Unit unit);
-    Unit moveY(const UnitAction& action, Unit unit);
-    Unit fallDown(const UnitAction& action, Unit unit);
+    void move(const UnitAction& action, int unitId);
+    void moveX(const UnitAction& action, int unitId);
+    void moveY(const UnitAction& action, int unitId);
+    void fallDown(const UnitAction& action, int unitId);
 
-    std::unordered_map<int, Unit> simulateBullets(std::unordered_map<int, Unit> units);
+    void simulateBullets();
 
-    std::unordered_map<int, Unit> explode(const Bullet& bullet,
-                                          std::unordered_map<int, Unit> units,
-                                          std::optional<int> unitId);
+    void explode(const Bullet& bullet,
+                 std::optional<int> unitId);
 
     Unit simulateShoot(const UnitAction& action, Unit unit);
 
 public:
     Game game;
     std::vector<Bullet> bullets;
+    std::unordered_map<int, Unit> units;
 private:
     int microTicks;
 
