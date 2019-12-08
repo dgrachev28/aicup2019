@@ -19,7 +19,7 @@ public:
     bool shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug& debug);
 
 private:
-    std::optional<Simulation> simulation;
+    std::shared_ptr<Simulation> simulation;
     std::optional<Unit> nextUnit;
     std::optional<UnitAction> prevAction;
 };

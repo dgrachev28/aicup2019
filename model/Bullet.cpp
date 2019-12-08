@@ -1,7 +1,7 @@
 #include "Bullet.hpp"
 
 Bullet::Bullet() { }
-Bullet::Bullet(WeaponType weaponType, int unitId, int playerId, Vec2Double position, Vec2Double velocity, int damage, double size, std::shared_ptr<ExplosionParams> explosionParams) : weaponType(weaponType), unitId(unitId), playerId(playerId), position(position), velocity(velocity), damage(damage), size(size), explosionParams(explosionParams) { }
+Bullet::Bullet(WeaponType weaponType, int unitId, int playerId, Vec2Double position, Vec2Double velocity, double damage, double size, std::shared_ptr<ExplosionParams> explosionParams) : weaponType(weaponType), unitId(unitId), playerId(playerId), position(position), velocity(velocity), damage(damage), size(size), explosionParams(explosionParams) { }
 Bullet Bullet::readFrom(InputStream& stream) {
     Bullet result;
     switch (stream.readInt()) {
@@ -37,7 +37,7 @@ void Bullet::writeTo(OutputStream& stream) const {
     stream.write(playerId);
     position.writeTo(stream);
     velocity.writeTo(stream);
-    stream.write(damage);
+    stream.write(int(damage));
     stream.write(size);
     if (explosionParams) {
         stream.write(false);

@@ -32,6 +32,8 @@ struct Rect {
 
 bool intersectRects(const Rect& a, const Rect& b);
 
+bool checkUnitsCollision(const Rect& unit, int unitId, const std::unordered_map<int, Unit>& units);
+
 bool checkWallCollision(const Rect& unit, const Game& game, bool jumpDown = true, bool collisionBeforeMove = false);
 
 bool checkJumpPadCollision(const Rect& unit, const Game& game);
@@ -41,5 +43,7 @@ bool checkLadderCollision(const Unit& unit, const Game& game);
 bool checkLadderCollision(const Rect& rect, const Game& game);
 
 bool areSame(double a, double b, double precision = 1e-7);
+
+double distanceSqr(Vec2Double a, Vec2Double b);
 
 #endif

@@ -11,6 +11,15 @@ bool checkTile(double x, double y, Tile tile, const Game& game) {
     return game.level.tiles[int(x)][int(y)] == tile;
 }
 
+bool checkUnitsCollision(const Rect& unit, int unitId, const std::unordered_map<int, Unit>& units) {
+    for (const auto&[id, u] : units) {
+        if (id != unitId && intersectRects(unit, Rect(u))) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool checkWallCollision(const Rect& unit, const Game& game, bool jumpDown, bool collisionBeforeMove) {
     auto result = checkTile(unit.right, unit.bottom, WALL, game)
                   || checkTile(unit.right, unit.top, WALL, game)
@@ -48,4 +57,8 @@ bool checkLadderCollision(const Unit& unit, const Game& game) {
 
 bool areSame(double a, double b, double precision) {
     return std::fabs(a - b) < precision;
+}
+
+double distanceSqr(Vec2Double a, Vec2Double b) {
+    return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
 }

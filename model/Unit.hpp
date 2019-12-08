@@ -24,12 +24,13 @@
 #include <memory>
 #include <memory>
 #include <memory>
+#include <optional>
 
 class Unit {
 public:
     int playerId;
     int id;
-    int health;
+    double health;
     Vec2Double position;
     Vec2Double size;
     JumpState jumpState;
@@ -38,9 +39,9 @@ public:
     bool onGround;
     bool onLadder;
     int mines;
-    std::shared_ptr<Weapon> weapon;
+    std::optional<Weapon> weapon;
     Unit();
-    Unit(int playerId, int id, int health, Vec2Double position, Vec2Double size, JumpState jumpState, bool walkedRight, bool stand, bool onGround, bool onLadder, int mines, std::shared_ptr<Weapon> weapon);
+    Unit(int playerId, int id, double health, Vec2Double position, Vec2Double size, JumpState jumpState, bool walkedRight, bool stand, bool onGround, bool onLadder, int mines, Weapon weapon);
     static Unit readFrom(InputStream& stream);
     void writeTo(OutputStream& stream) const;
     std::string toString() const;

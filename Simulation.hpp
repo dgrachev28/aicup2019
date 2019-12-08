@@ -4,18 +4,21 @@
 
 #include "model/Game.hpp"
 #include "model/UnitAction.hpp"
+#include "Debug.hpp"
 
 class Simulation {
 public:
     explicit Simulation(
         Game game,
+        Debug& debug,
+        ColorFloat color = ColorFloat(1.0, 0.0, 0.0, 0.5),
         bool simMove = true,
         bool simBullets = true,
         bool simShoot = true,
         int microTicks = 100
     );
 
-    void simulate(const UnitAction& action, int unitId);
+    void simulate(std::unordered_map<int, UnitAction> actions);
 
 private:
     void move(const UnitAction& action, int unitId);
@@ -28,10 +31,14 @@ private:
     void explode(const Bullet& bullet,
                  std::optional<int> unitId);
 
-    Unit simulateShoot(const UnitAction& action, Unit unit);
+    void simulateShoot(const UnitAction& action, int unitId);
+
+    void createBullets(const UnitAction& action, int unitId);
 
 public:
     Game game;
+    Debug& debug;
+    ColorFloat color;
     std::vector<Bullet> bullets;
     std::unordered_map<int, Unit> units;
 private:
@@ -41,6 +48,5 @@ private:
     bool simBullets;
     bool simShoot;
 };
-
 
 #endif

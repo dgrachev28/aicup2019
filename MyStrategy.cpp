@@ -6,17 +6,15 @@
 
 MyStrategy::MyStrategy() {}
 
-double distanceSqr(Vec2Double a, Vec2Double b) {
-    return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
-}
 
 UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
                                  Debug& debug) {
+
     if (simulation) {
         simulation->game.currentTick = game.currentTick;
         simulation->bullets = game.bullets;
     } else {
-        simulation = Simulation(game, true, true, false);
+        simulation = std::make_shared<Simulation>(Simulation(game, debug, ColorFloat(1.0, 0.0, 0.0, 0.5), true, true, false));
     }
     if (nextUnit) {
 //        if (!areSame(unit.position.x, nextUnit->position.x, 1e-2) || !areSame(unit.position.y, nextUnit->position.y, 1e-2)) {
@@ -70,7 +68,7 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
     }
 
     Vec2Double targetPos = unit.position;
-    if (unit.weapon == nullptr && nearestWeapon != nullptr) {
+    if (!unit.weapon && nearestWeapon != nullptr) {
         targetPos = nearestWeapon->position;
     } else if (nearestHealthPack != nullptr && unit.health <= 90.0
                && !((unit.position.x < nearestEnemy->position.x && nearestEnemy->position.x < nearestHealthPack->position.x)
@@ -89,11 +87,11 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
     Vec2Double aim = Vec2Double(0, 0);
     if (nearestEnemy != nullptr) {
         double aimY = nearestEnemy->position.y;
-        if (!nearestEnemy->jumpState.canJump && nearestEnemy->jumpState.maxTime < 1e-9) {
-            aimY -= 0.3 * nearestEnemy->size.y;
-        } else {
-            aimY += 0.3 * nearestEnemy->size.y;
-        }
+//        if (!nearestEnemy->jumpState.canJump && nearestEnemy->jumpState.maxTime < 1e-9) {
+//            aimY -= 0.3 * nearestEnemy->size.y;
+//        } else {
+//            aimY += 0.3 * nearestEnemy->size.y;
+//        }
         aim = Vec2Double(nearestEnemy->position.x - unit.position.x,
                          aimY - unit.position.y);
     }
@@ -135,7 +133,7 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
 //    nextUnit = simulation->simulate(action, units, unit.id)[unit.id];
 //    prevAction = action;
 
-    action.shoot = shouldShoot(unit, aim, game, debug);
+//    action.shoot = shouldShoot(unit, aim, game, debug);
 
     auto bestAction = avoidBullets(unit, game, debug);
     if (bestAction) {
@@ -148,39 +146,97 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
 }
 
 std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit, const Game& game, Debug& debug) {
+    int actionTicks = 20;
     StrategyGenerator gen;
     std::vector<std::vector<UnitAction>> actionSets = {
-        gen.getActions(30, true, true, false),
-        gen.getActions(30, false, true, false),
-        gen.getActions(30, true, false, true),
-        gen.getActions(30, false, false, true)
+        gen.getActions(actionTicks, true, true, false),
+        gen.getActions(actionTicks, false, true, false),
+        gen.getActions(actionTicks, true, false, true),
+        gen.getActions(actionTicks, false, false, true)
     };
 
-    UnitAction bestAction;
-    int bestHealth = -1000;
-    int worstHealth = unit.health;
-    for (const auto& actionSet : actionSets) {
-        Simulation sim(game, true, true, false);
-        for (const UnitAction& action : actionSet) {
-            sim.simulate(action, unit.id);
-        }
+    std::vector<std::vector<UnitAction>> enemyActionSets = {
+        gen.getActions(actionTicks, false, false, true)
+    };
 
-        const Unit& myUnit = sim.units[unit.id];
-        if (myUnit.health < worstHealth) {
-            worstHealth = myUnit.health;
+    std::optional<UnitAction> bestAction;
+    double bestHealth = -1000;
+    double worstHealth = unit.health;
+
+    double bestEnemyHealth = -1000;
+    double worstEnemyHealth = -1;
+    double enemyHealthBefore = -1;
+    int enemyUnitId = -1;
+    for (const Unit& u : game.units) {
+        if (u.playerId != unit.playerId) {
+            enemyUnitId = u.id;
+            worstEnemyHealth = u.health;
+            enemyHealthBefore = u.health;
         }
-        if (myUnit.health > bestHealth) {
-            bestHealth = myUnit.health;
+    }
+
+    double bestScore = -1000;
+    std::unordered_map<int, UnitAction> params;
+    std::vector<ColorFloat> colors = {
+        ColorFloat(1.0, 0.0, 0.0, 0.3),
+        ColorFloat(0.0, 1.0, 0.0, 0.3),
+        ColorFloat(0.0, 0.0, 1.0, 0.3),
+        ColorFloat(1.0, 1.0, 0.0, 0.3)
+    };
+    int colorIndex = 0;
+    for (auto& actionSet : actionSets) {
+        Simulation sim(game, debug, colors[colorIndex], true, true, true);
+        for (int i = 0; i < actionTicks; ++i) {
+            gen.updateAction(sim.units, unit.id, actionSet[i]);
+            gen.updateAction(sim.units, enemyUnitId, enemyActionSets[0][i]);
+            params[unit.id] = actionSet[i];
+            params[enemyUnitId] = enemyActionSets[0][i];
+            sim.simulate(params);
+        }
+//        debug.draw(CustomData::Rect(
+//            Vec2Float(sim.units[unit.id].position.x - sim.units[unit.id].size.x / 2, sim.units[unit.id].position.y),
+//            Vec2Float(sim.units[unit.id].size.x, sim.units[unit.id].size.y),
+//            colors[colorIndex]
+//        ));
+
+        const Unit& simMyUnit = sim.units[unit.id];
+        const Unit& simEnemyUnit = sim.units[enemyUnitId];
+        if (simMyUnit.health < worstHealth) {
+            worstHealth = simMyUnit.health;
+        }
+        if (simMyUnit.health > bestHealth) {
+            bestHealth = simMyUnit.health;
+        }
+        if (simEnemyUnit.health < worstEnemyHealth) {
+            worstEnemyHealth = simEnemyUnit.health;
+        }
+        if (simEnemyUnit.health > bestEnemyHealth) {
+            bestEnemyHealth = simEnemyUnit.health;
+        }
+        double score = simMyUnit.health - unit.health - (simEnemyUnit.health - enemyHealthBefore);
+        std::cerr << "score: " << score << '\n';
+        if (score >= bestScore) {
+            bestScore = score;
             bestAction = actionSet[0];
         }
+        ++colorIndex;
     }
-//    std::cerr << "Best health: " << bestHealth << "\n";
-//    std::cerr << "Worst health: " << worstHealth << "\n";
 
-    if (worstHealth == unit.health) {
+    std::cerr << "Current tick: " << game.currentTick << "\n";
+    if (bestHealth != worstHealth || bestEnemyHealth != worstEnemyHealth) {
+        std::cerr << "Best my health: " << bestHealth << "\n";
+        std::cerr << "Worst my health: " << worstHealth << "\n";
+        std::cerr << "Best enemy health: " << bestEnemyHealth << "\n";
+        std::cerr << "Worst enemy health: " << worstEnemyHealth << "\n";
+    }
+
+    if (worstHealth == unit.health && worstEnemyHealth == enemyHealthBefore) {
         return std::nullopt;
     }
-    std::cerr << "Best action: " << bestAction.toString() << "\n";
+    if (bestAction) {
+        std::cerr << "Best action: " << bestAction->toString() << "\n";
+        std::cerr << "Best score: " << bestScore << "\n";
+    }
     return bestAction;
 }
 
@@ -198,7 +254,7 @@ bool MyStrategy::shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug&
 
     std::vector<Damage> damages;
     for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
-        Simulation sim(game, false, true, false, 5);
+        Simulation sim(game, debug, ColorFloat(1.0, 0.0, 0.0, 0.5), false, true, false, 5);
 
         auto bulletPos = unit.position;
         bulletPos.y += unit.size.y / 2;
@@ -216,23 +272,18 @@ bool MyStrategy::shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug&
             unit.weapon->params.bullet.size,
             unit.weapon->params.explosion
         )};
-        std::unordered_map<int, Unit> units;
-        for (const Unit& u : game.units) {
-            units[u.id] = u;
-        }
         for (int j = 0; j < 30; ++j) {
-            sim.simulate(UnitAction(), unit.id);
+//            sim.simulate(UnitAction(), unit.id);
             if (sim.bullets.empty()) {
                 break;
             }
         }
-        units = sim.units;
         Damage damage{};
         for (const Unit& u : game.units) {
             if (u.id == unit.id) {
-                damage.me = u.health - units[u.id].health;
+                damage.me = u.health - sim.units[u.id].health;
             } else {
-                damage.enemy = u.health - units[u.id].health;
+                damage.enemy = u.health - sim.units[u.id].health;
             }
         }
         damages.push_back(damage);
