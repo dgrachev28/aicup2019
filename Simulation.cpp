@@ -13,6 +13,7 @@ Simulation::Simulation(Game game,
                        int microTicks)
     : game(std::move(game))
     , debug(debug)
+    , events(std::vector<DamageEvent>())
     , color(color)
     , microTicks(microTicks)
     , simMove(simMove)
@@ -20,12 +21,14 @@ Simulation::Simulation(Game game,
     , simShoot(simShoot) {
 
     bullets = this->game.bullets;
+    startTick = this->game.currentTick;
     for (const Unit& u : this->game.units) {
         units[u.id] = u;
     }
 }
 
 void Simulation::simulate(std::unordered_map<int, UnitAction> actions) {
+    ++game.currentTick;
     for (const auto& [unitId, action] : actions) {
         if (units[unitId].weapon && simShoot) {
             Weapon& weapon = *units[unitId].weapon;
@@ -187,6 +190,14 @@ void Simulation::explode(const Bullet& bullet,
                          std::optional<int> unitId) {
     if (unitId) {
         units[*unitId].health -= bullet.damage;
+        events.push_back(DamageEvent{
+            game.currentTick - startTick,
+            *unitId,
+            bullet.damage,
+            bullet.real,
+            bullet.probability,
+            game.currentTick - bullet.shootTick
+        });
     }
     if (bullet.explosionParams) {
         Rect explosion(
@@ -199,6 +210,14 @@ void Simulation::explode(const Bullet& bullet,
         for (const auto& [id, unit]: units) {
             if (intersectRects(explosion, Rect(unit))) {
                 units[id].health -= bullet.explosionParams->damage;
+                events.push_back(DamageEvent{
+                    game.currentTick - startTick,
+                    *unitId,
+                    bullet.damage,
+                    bullet.real,
+                    bullet.probability,
+                    game.currentTick - bullet.shootTick
+                });
             }
         }
     }
@@ -210,17 +229,25 @@ void Simulation::simulateShoot(const UnitAction& action, int unitId) {
         return;
     }
     if (!action.shoot || (unit.weapon->fireTimer && *(unit.weapon->fireTimer) > 1e-9)) {
-        *(unit.weapon->fireTimer) -= 1 / (game.properties.ticksPerSecond * microTicks);
+        unit.weapon->fireTimer = *(unit.weapon->fireTimer) - 1 / (game.properties.ticksPerSecond * microTicks);
         unit.weapon->spread -= unit.weapon->params.aimSpeed / (game.properties.ticksPerSecond * microTicks);
         unit.weapon->spread = std::clamp(unit.weapon->spread, unit.weapon->params.minSpread, unit.weapon->params.maxSpread);
     } else {
+        int enemyUnitId;
+        for (const auto& [id, other] : units) {
+            if (other.playerId != unit.playerId) {
+                enemyUnitId = other.id;
+            }
+        }
+        Rect targetUnit(units[enemyUnitId]);
+
         if (--unit.weapon->magazine == 0) {
             unit.weapon->magazine = unit.weapon->params.magazineSize;
-            unit.weapon->fireTimer = std::make_shared<double>(unit.weapon->params.reloadTime);
+            unit.weapon->fireTimer = unit.weapon->params.reloadTime;
         } else {
-            unit.weapon->fireTimer = std::make_shared<double>(unit.weapon->params.fireRate);
+            unit.weapon->fireTimer = unit.weapon->params.fireRate;
         }
-        createBullets(action, unitId);
+        createBullets(action, unitId, targetUnit);
         unit.weapon->spread += unit.weapon->params.recoil;
         unit.weapon->spread = std::clamp(unit.weapon->spread, unit.weapon->params.minSpread, unit.weapon->params.maxSpread);
 //        if (unit.weapon->typ == ASSAULT_RIFLE) {
@@ -229,17 +256,17 @@ void Simulation::simulateShoot(const UnitAction& action, int unitId) {
 //                                             unit.weapon->params.minSpread,
 //                                             unit.weapon->params.maxSpread);
 //        }
-        unit.weapon->lastFireTick = std::make_shared<int>(game.currentTick);
+        unit.weapon->lastFireTick = game.currentTick;
 
-//        debug.draw(CustomData::Rect(
-//            Vec2Float(unit.position.x - unit.size.x / 2, unit.position.y),
-//            Vec2Float(unit.size.x, unit.size.y),
-//            color
-//        ));
+        debug.draw(CustomData::Rect(
+            Vec2Float(unit.position.x - unit.size.x / 2, unit.position.y),
+            Vec2Float(unit.size.x, unit.size.y),
+            color
+        ));
     }
 }
 
-void Simulation::createBullets(const UnitAction& action, int unitId) {
+void Simulation::createBullets(const UnitAction& action, int unitId, const Rect& targetUnit) {
     Unit& unit = units[unitId];
     double aimAngle = atan2(action.aim.y, action.aim.x);
     int angleStepsRange = 0;
@@ -252,6 +279,27 @@ void Simulation::createBullets(const UnitAction& action, int unitId) {
         double angle = aimAngle + unit.weapon->spread * i / (angleStepsRange == 0 ? 1 : angleStepsRange);
         auto bulletVel = Vec2Double(cos(angle) * unit.weapon->params.bullet.speed,
                                     sin(angle) * unit.weapon->params.bullet.speed);
+
+        double deltaAngle1 = fabs(atan2(targetUnit.top - unit.position.y, targetUnit.right - unit.position.x)
+                                  - atan2(targetUnit.bottom - unit.position.y, targetUnit.left - unit.position.x));
+        if (deltaAngle1 > M_PI_2) {
+            deltaAngle1 = fabs(deltaAngle1 - M_PI);
+        }
+        if (deltaAngle1 > M_PI_2) {
+            deltaAngle1 = fabs(deltaAngle1 - M_PI);
+        }
+
+        double deltaAngle2 = fabs(atan2(targetUnit.top - unit.position.y, targetUnit.left - unit.position.x)
+                                 - atan2(targetUnit.bottom - unit.position.y, targetUnit.right - unit.position.x));
+        if (deltaAngle2 > M_PI_2) {
+            deltaAngle2 = fabs(deltaAngle2 - M_PI);
+        }
+        if (deltaAngle2 > M_PI_2) {
+            deltaAngle2 = fabs(deltaAngle2 - M_PI);
+        }
+        double deltaAngle = deltaAngle1 > deltaAngle2 ? deltaAngle1 : deltaAngle2;
+        double spreadAngle = 2 * unit.weapon->spread;
+
         Bullet bullet(
             unit.weapon->typ,
             unit.id,
@@ -260,7 +308,10 @@ void Simulation::createBullets(const UnitAction& action, int unitId) {
             bulletVel,
             double(unit.weapon->params.bullet.damage) / angleStepsCount,
                 unit.weapon->params.bullet.size,
-            unit.weapon->params.explosion
+            unit.weapon->params.explosion,
+            deltaAngle / spreadAngle,
+            game.currentTick,
+            false
         );
         if (unit.weapon->params.explosion) {
             bullet.explosionParams = std::make_shared<ExplosionParams>(

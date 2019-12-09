@@ -5,6 +5,7 @@
 #include "model/Game.hpp"
 #include "model/UnitAction.hpp"
 #include "Debug.hpp"
+#include "Util.hpp"
 
 class Simulation {
 public:
@@ -33,15 +34,17 @@ private:
 
     void simulateShoot(const UnitAction& action, int unitId);
 
-    void createBullets(const UnitAction& action, int unitId);
+    void createBullets(const UnitAction& action, int unitId, const Rect& targetUnit);
 
 public:
     Game game;
     Debug& debug;
+    std::vector<DamageEvent> events;
     ColorFloat color;
     std::vector<Bullet> bullets;
     std::unordered_map<int, Unit> units;
 private:
+    int startTick;
     int microTicks;
 
     bool simMove;

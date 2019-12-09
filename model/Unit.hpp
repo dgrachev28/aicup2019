@@ -47,4 +47,26 @@ public:
     std::string toString() const;
 };
 
+struct DamageEvent {
+    int tick;
+    int unitId;
+    double damage;
+
+    bool real;
+    double probability;
+    int shootTick;
+
+    std::string toString() const {
+        auto result = "tick = " + std::to_string(tick)
+               + ", unitId = " + std::to_string(unitId)
+               + ", damage = " + std::to_string(damage)
+               + ", real = " + (real ? "true" : "false");
+        if (!real) {
+            result += ", probability = " + std::to_string(probability)
+                      + ", shootTick = " + std::to_string(shootTick);
+        }
+        return result;
+    }
+};
+
 #endif

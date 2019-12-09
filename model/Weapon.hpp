@@ -15,6 +15,7 @@
 #include <memory>
 #include <memory>
 #include <memory>
+#include <optional>
 
 class Weapon {
 public:
@@ -23,11 +24,11 @@ public:
     int magazine;
     bool wasShooting;
     double spread;
-    std::shared_ptr<double> fireTimer;
-    std::shared_ptr<double> lastAngle;
-    std::shared_ptr<int> lastFireTick;
+    std::optional<double> fireTimer;
+    std::optional<double> lastAngle;
+    std::optional<int> lastFireTick;
     Weapon();
-    Weapon(WeaponType typ, WeaponParams params, int magazine, bool wasShooting, double spread, std::shared_ptr<double> fireTimer, std::shared_ptr<double> lastAngle, std::shared_ptr<int> lastFireTick);
+    Weapon(WeaponType typ, WeaponParams params, int magazine, bool wasShooting, double spread, std::optional<double> fireTimer, std::optional<double> lastAngle, std::optional<int> lastFireTick);
     static Weapon readFrom(InputStream& stream);
     void writeTo(OutputStream& stream) const;
     std::string toString() const;
