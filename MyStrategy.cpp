@@ -81,11 +81,9 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
 
     Vec2Double targetPos = unit.position;
     double targetImportance = 1.0;
-    if (!unit.weapon && nearestWeapon != nullptr) {
+    if ((!unit.weapon || unit.weapon->typ == ROCKET_LAUNCHER) && nearestWeapon != nullptr) {
         targetPos = nearestWeapon->position;
-    } else if (nearestHealthPack != nullptr && unit.health <= 90.0
-               && !((unit.position.x < nearestEnemy->position.x && nearestEnemy->position.x < nearestHealthPack->position.x)
-               || (unit.position.x > nearestEnemy->position.x && nearestEnemy->position.x > nearestHealthPack->position.x))) {
+    } else if (nearestHealthPack != nullptr && unit.health <= 90.0) {
         targetPos = nearestHealthPack->position;
         if (unit.health <= 90.0) {
             targetImportance = 10.0;
@@ -97,7 +95,7 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
             targetImportance = 100.0;
         }
     } else if (nearestEnemy != nullptr) {
-        double desiredDistance = (nearestEnemy->weapon && nearestEnemy->weapon->typ == ROCKET_LAUNCHER) ? 81.0 : 9.0;
+        double desiredDistance = (nearestEnemy->weapon && nearestEnemy->weapon->typ == ROCKET_LAUNCHER) ? 49.0 : 9.0;
         if (distanceSqr(unit.position, nearestEnemy->position) > desiredDistance) {
             targetPos = nearestEnemy->position;
         } else {
@@ -135,7 +133,7 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
     action.aim = aim;
     action.shoot = true;
     action.reload = false;
-    action.swapWeapon = false;
+    action.swapWeapon = unit.weapon && unit.weapon->typ == ROCKET_LAUNCHER;
     action.plantMine = false;
 
     debug.draw(CustomData::Log(
@@ -220,6 +218,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit, const Game&
             for (const auto& event : sim.events) {
                 std::cerr << event.toString() << '\n';
             }
+            std::cerr << "=====================\n";
             bestAction = actionSet[0];
         }
 
@@ -374,7 +373,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 
     std::cerr << "best score: " << score2 << '\n';
 
-    if (!areSame(score1, score2, targetImportance * 1e-3)) {
+    if (!areSame(score1, score2, (targetImportance > 1.0) ? 2.0 : 1e-2)) {
         if (score1 > score2) {
             return 1;
         } else {
@@ -397,7 +396,8 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
     if ((targetPos.x < unit.position.x &&
          game.level.tiles[size_t(unit.position.x - 1)][size_t(unit.position.y)] == Tile::WALL) ||
         (targetPos.x > unit.position.x &&
-         game.level.tiles[size_t(unit.position.x + 1)][size_t(unit.position.y)] == Tile::WALL)) {
+         game.level.tiles[size_t(unit.position.x + 1)][size_t(unit.position.y)] == Tile::WALL) ||
+        targetPos.y > unit.position.y) {
         if (action1.jump && !action2.jump) {
             std::cerr << "WIN. We need to jump\n";
             return 1;

@@ -161,7 +161,7 @@ void Simulation::fallDown(const UnitAction& action, int unitId) {
 }
 
 void Simulation::simulateBullets() {
-    std::vector<Bullet> updatedBullets;
+    std::vector<Bullet> updatedBullets = {};
     for (Bullet bullet : bullets) {
         // TODO: should I check unit collision here before bullet movement?
         bullet.position.x += bullet.velocity.x / (game.properties.ticksPerSecond * microTicks);
@@ -212,8 +212,8 @@ void Simulation::explode(const Bullet& bullet,
                 units[id].health -= bullet.explosionParams->damage;
                 events.push_back(DamageEvent{
                     game.currentTick - startTick,
-                    *unitId,
-                    bullet.damage,
+                    id,
+                    double(bullet.explosionParams->damage),
                     bullet.real,
                     bullet.probability,
                     game.currentTick - bullet.shootTick
