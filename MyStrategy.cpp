@@ -9,24 +9,11 @@ MyStrategy::MyStrategy() {}
 
 UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
                                  Debug& debug) {
-
-    if (game.currentTick < 10) {
-        UnitAction action;
-        action.velocity = 0.0;
-        action.jump = false;
-        action.jumpDown = !action.jump;
-        action.aim = Vec2Double(0.0, 0.0);
-        action.shoot = true;
-        action.reload = false;
-        action.swapWeapon = false;
-        action.plantMine = false;
-        return action;
-    }
     if (simulation) {
         simulation->game.currentTick = game.currentTick;
         simulation->bullets = game.bullets;
     } else {
-        simulation = std::make_shared<Simulation>(Simulation(game, debug, ColorFloat(1.0, 0.0, 0.0, 0.5), true, true, false));
+        simulation = std::make_shared<Simulation>(Simulation(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.5), true, true, false));
     }
     if (nextUnit) {
 //        if (!areSame(unit.position.x, nextUnit->position.x, 1e-2) || !areSame(unit.position.y, nextUnit->position.y, 1e-2)) {
@@ -97,7 +84,7 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
     } else if (nearestEnemy != nullptr) {
         double desiredDistance = (nearestEnemy->weapon && nearestEnemy->weapon->typ == ROCKET_LAUNCHER) ? 49.0 : 9.0;
         if (distanceSqr(unit.position, nearestEnemy->position) > desiredDistance) {
-            targetPos = nearestEnemy->position;
+            targetPos = Vec2Double(nearestEnemy->position.x, nearestEnemy->position.y + nearestEnemy->size.y);
         } else {
             targetPos = unit.position.x > nearestEnemy->position.x ? Vec2Double(50.0, 50.0) : Vec2Double(0.0, 50.0);
         }
@@ -105,15 +92,8 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
     debug.draw(CustomData::Log(
         std::string("Target pos: ") + targetPos.toString()));
     Vec2Double aim = Vec2Double(0, 0);
-    if (nearestEnemy != nullptr) {
-        double aimY = nearestEnemy->position.y;
-//        if (!nearestEnemy->jumpState.canJump && nearestEnemy->jumpState.maxTime < 1e-9) {
-//            aimY -= 0.3 * nearestEnemy->size.y;
-//        } else {
-//            aimY += 0.3 * nearestEnemy->size.y;
-//        }
-        aim = Vec2Double(nearestEnemy->position.x - unit.position.x,
-                         aimY - unit.position.y);
+    if (nearestEnemy != nullptr && unit.weapon) {
+        aim = predictShootAngle(unit, *nearestEnemy, game, debug);
     }
     bool jump = targetPos.y > unit.position.y;
     if (targetPos.x > unit.position.x &&
@@ -126,10 +106,16 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
         Tile::WALL) {
         jump = true;
     }
+    bool jumpDown = !jump;
+    if (jump && unit.jumpState.maxTime < 0.3 &&
+        game.level.tiles[size_t(unit.position.x)][size_t(unit.position.y - 1)] == Tile::PLATFORM) {
+        jump = false;
+    }
+
     UnitAction action;
     action.velocity = (targetPos.x - unit.position.x) * 100;
     action.jump = jump;
-    action.jumpDown = !action.jump;
+    action.jumpDown = jumpDown;
     action.aim = aim;
     action.shoot = true;
     action.reload = false;
@@ -153,30 +139,76 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
 //    nextUnit = simulation->simulate(action, units, unit.id)[unit.id];
 //    prevAction = action;
 
-    action.shoot = shouldShoot(unit, aim, game, debug);
+    if (nearestEnemy != nullptr) {
+        action.shoot = shouldShoot(unit, nearestEnemy->id, aim, game, debug);
+    }
 
-    auto bestAction = avoidBullets(unit, game, targetPos, targetImportance, debug);
+    auto bestAction = avoidBullets(unit, game, targetPos, targetImportance, action, debug);
     if (bestAction) {
         action.velocity = bestAction->velocity;
         action.jump = bestAction->jump;
         action.jumpDown = bestAction->jumpDown;
     }
 
+    std::cerr << "ACTUAL ACTION: " << action.toString() << "\n";
+
     return action;
 }
 
-std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit, const Game& game, const Vec2Double& targetPos, double targetImportance, Debug& debug) {
+Vec2Double MyStrategy::predictShootAngle(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug) {
+    Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 1.0, 1.0, 0.3), true, false, false, 3);
+
+    Vec2Double enemyPosition = enemyUnit.position;
+    if (enemyUnit.jumpState.canCancel || !areSame(enemyUnit.jumpState.maxTime, 0.0)) {
+        return Vec2Double(enemyPosition.x - unit.position.x,
+                          enemyPosition.y - unit.position.y);
+    }
+
+    double speed = unit.weapon->params.bullet.speed;
+
+    std::unordered_map<int, UnitAction> params;
+    int simulationMaxTicks = 40;
+    const auto& actions = StrategyGenerator::getActions(simulationMaxTicks, 0, false, false);
+
+    for (int ticks = 0; ticks < simulationMaxTicks; ++ticks) {
+        double distSqr = distanceSqr(enemyPosition, unit.position);
+        double bulletDist = speed * ticks / 60.0;
+        params[enemyUnit.id] = actions[ticks];
+        sim.simulate(params);
+        enemyPosition = sim.units[enemyUnit.id].position;
+        if (distSqr < bulletDist * bulletDist) {
+            break;
+        }
+    }
+    return Vec2Double(enemyPosition.x - unit.position.x,
+                      enemyPosition.y - unit.position.y);
+}
+
+std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
+                                                   const Game& game,
+                                                   const Vec2Double& targetPos,
+                                                   double targetImportance,
+                                                   const UnitAction& targetAction,
+                                                   Debug& debug) {
+    std::cerr << "Current tick: " << game.currentTick << "\n";
     int actionTicks = 30;
-    StrategyGenerator gen;
     std::vector<std::vector<UnitAction>> actionSets = {
-        gen.getActions(actionTicks, 1, true, false),
-        gen.getActions(actionTicks, -1, true, false),
-        gen.getActions(actionTicks, 1, false, true),
-        gen.getActions(actionTicks, -1, false, true)
+        StrategyGenerator::getActions(actionTicks, 1, true, false),
+        StrategyGenerator::getActions(actionTicks, 0, true, false),
+        StrategyGenerator::getActions(actionTicks, -1, true, false),
+        StrategyGenerator::getActions(actionTicks, 1, false, true),
+        StrategyGenerator::getActions(actionTicks, 0, false, true),
+        StrategyGenerator::getActions(actionTicks, -1, false, true),
+        StrategyGenerator::getActions(actionTicks, 1, false, false),
+        StrategyGenerator::getActions(actionTicks, 0, false, true),
+        StrategyGenerator::getActions(actionTicks, -1, false, false)
     };
 
     std::vector<std::vector<UnitAction>> enemyActionSets = {
-        gen.getActions(actionTicks, 0, false, false)
+        StrategyGenerator::getActions(actionTicks, 1, true, false),
+        StrategyGenerator::getActions(actionTicks, -1, true, false),
+        StrategyGenerator::getActions(actionTicks, 1, false, true),
+        StrategyGenerator::getActions(actionTicks, -1, false, true)
     };
 
     std::optional<UnitAction> bestAction;
@@ -187,7 +219,6 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit, const Game&
         }
     }
 
-    double bestScore = -1000;
     std::unordered_map<int, UnitAction> params;
     std::vector<ColorFloat> colors = {
         ColorFloat(1.0, 0.0, 0.0, 0.3),
@@ -195,16 +226,47 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit, const Game&
         ColorFloat(0.0, 0.0, 1.0, 0.3),
         ColorFloat(1.0, 1.0, 0.0, 0.3)
     };
+
     int colorIndex = 0;
+    int bestEnemyActionIndex = 0;
+    std::shared_ptr<Simulation> bestEnemySim = nullptr;
+    for (auto& actionSet : enemyActionSets) {
+        Simulation sim(game, unit.playerId, debug, colors[colorIndex], true, true, true, 20);
+        for (int i = 0; i < actionTicks; ++i) {
+            auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
+            StrategyGenerator::updateAction(sim.units, unit.id, myAction);
+            StrategyGenerator::updateAction(sim.units, enemyUnitId, actionSet[i]);
+            params[unit.id] = myAction;
+            params[enemyUnitId] = actionSet[i];
+            sim.simulate(params);
+        }
+        if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet[0], *bestAction, game,
+                                                          unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
+            if (bestEnemySim == nullptr) {
+                std::cerr << "First simulation\n";
+                for (const auto& event : sim.events) {
+                    std::cerr << event.toString() << '\n';
+                }
+                std::cerr << '\n';
+            }
+            bestEnemySim = std::make_shared<Simulation>(sim);
+            bestEnemyActionIndex = colorIndex;
+        }
+        ++colorIndex;
+    }
+
+    std::cerr << "Finish enemy simulation!!!\n";
+
+    colorIndex = 0;
     bool noEvents = true;
     std::shared_ptr<Simulation> bestSim = nullptr;
     for (auto& actionSet : actionSets) {
-        Simulation sim(game, debug, colors[colorIndex], true, true, true);
+        Simulation sim(game, unit.playerId, debug, colors[colorIndex], true, true, true, 20);
         for (int i = 0; i < actionTicks; ++i) {
-            gen.updateAction(sim.units, unit.id, actionSet[i]);
-            gen.updateAction(sim.units, enemyUnitId, enemyActionSets[0][i]);
+            StrategyGenerator::updateAction(sim.units, unit.id, actionSet[i]);
+            StrategyGenerator::updateAction(sim.units, enemyUnitId, enemyActionSets[bestEnemyActionIndex][i]);
             params[unit.id] = actionSet[i];
-            params[enemyUnitId] = enemyActionSets[0][i];
+            params[enemyUnitId] = enemyActionSets[bestEnemyActionIndex][i];
             sim.simulate(params);
         }
 //        debug.draw(CustomData::Rect(
@@ -213,12 +275,15 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit, const Game&
 //            colors[colorIndex]
 //        ));
         if (bestSim == nullptr || compareSimulations(sim, *bestSim, actionSet[0], *bestAction, game,
-                                                     unit, actionTicks, targetPos, targetImportance) > 0) {
-            bestSim = std::make_shared<Simulation>(sim);
-            for (const auto& event : sim.events) {
-                std::cerr << event.toString() << '\n';
+                                                     unit, actionTicks, targetPos, targetImportance, targetAction) > 0) {
+            if (bestSim == nullptr) {
+                std::cerr << "First simulation\n";
+                for (const auto& event : sim.events) {
+                    std::cerr << event.toString() << '\n';
+                }
+                std::cerr << '\n';
             }
-            std::cerr << "=====================\n";
+            bestSim = std::make_shared<Simulation>(sim);
             bestAction = actionSet[0];
         }
 
@@ -228,18 +293,16 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit, const Game&
         ++colorIndex;
     }
 
-    std::cerr << "Current tick: " << game.currentTick << "\n";
     if (noEvents) {
         return std::nullopt;
     }
     if (bestAction) {
         std::cerr << "Best action: " << bestAction->toString() << "\n";
-        std::cerr << "Best score: " << bestScore << "\n";
     }
     return bestAction;
 }
 
-bool MyStrategy::shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug& debug) {
+bool MyStrategy::shouldShoot(Unit unit, int enemyUnitId, Vec2Double aim, const Game& game, Debug& debug) {
     if (!unit.weapon) {
         return false;
     }
@@ -253,7 +316,7 @@ bool MyStrategy::shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug&
 
     std::vector<Damage> damages;
     for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
-        Simulation sim(game, debug, ColorFloat(0.0, 1.0, 1.0, 0.5), false, true, false, 5);
+        Simulation sim(game, unit.playerId, debug, ColorFloat(0.0, 1.0, 1.0, 0.5), true, true, false, 5);
 
         auto bulletPos = unit.position;
         bulletPos.y += unit.size.y / 2;
@@ -271,8 +334,12 @@ bool MyStrategy::shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug&
             unit.weapon->params.bullet.size,
             unit.weapon->params.explosion
         )};
+        std::unordered_map<int, UnitAction> params;
+        auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
         for (int j = 0; j < 30; ++j) {
-            sim.simulate(std::unordered_map<int, UnitAction>());
+            StrategyGenerator::updateAction(sim.units, enemyUnitId, myAction);
+            params[enemyUnitId] = myAction;
+            sim.simulate(params);
             if (sim.bullets.empty()) {
                 break;
             }
@@ -297,21 +364,22 @@ bool MyStrategy::shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug&
             ++damageEnemyCount;
         }
     }
-    std::cerr << "damageMeCount: " << damageMeCount << ", P: " << std::to_string(double(damageMeCount) / angleStepsCount) << '\n';
-    std::cerr << "damageEnemyCount: " << damageEnemyCount << ", P: " << std::to_string(double(damageEnemyCount) / angleStepsCount) << '\n';
+    std::cerr << "damageMeCount: " << damageMeCount << ", P: " << std::to_string(damageMeCount / angleStepsCount) << '\n';
+    std::cerr << "damageEnemyCount: " << damageEnemyCount << ", P: " << std::to_string(damageEnemyCount / angleStepsCount) << '\n';
     if (damageEnemyCount == 0) {
         return false;
     }
 //    if ((double(damageEnemyCount) / angleStepsCount) < 0.1) {
 //        return false;
 //    }
-    return double(damageMeCount) / angleStepsCount < 0.05 || damageEnemyCount > 0;
+    return damageMeCount / angleStepsCount < 0.05 || damageEnemyCount > 0;
 }
 
 int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim2,
                                    const UnitAction& action1, const UnitAction& action2,
-                                   const Game& game, const Unit& unit,
-                                   int actionTicks, const Vec2Double& targetPos, double targetImportance) {
+                                   const Game& game, const Unit& unit, int actionTicks,
+                                   const Vec2Double& targetPos, double targetImportance,
+                                   const UnitAction& targetAction) {
     int unitId = unit.id;
     int indexSim1 = 0;
     int indexSim2 = 0;
@@ -319,19 +387,19 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
     auto events1 = sim1.events;
     auto events2 = sim2.events;
 
-    while (indexSim1 < events1.size() && indexSim2 < events2.size()) {
-        if (events1[indexSim1].tick > events2[indexSim2].tick) {
-            if (events1[indexSim1].tick - events2[indexSim2].tick == 1) {
-                events1[indexSim1].tick = events2[indexSim2].tick;
-            }
-            ++indexSim1;
-        } else {
-            if (events2[indexSim2].tick - events1[indexSim1].tick == 1) {
-                events2[indexSim2].tick = events1[indexSim1].tick;
-            }
-            ++indexSim2;
-        }
-    }
+//    while (indexSim1 < events1.size() && indexSim2 < events2.size()) {
+//        if (events1[indexSim1].tick > events2[indexSim2].tick) {
+//            if (events1[indexSim1].tick - events2[indexSim2].tick == 1) {
+//                events1[indexSim1].tick = events2[indexSim2].tick;
+//            }
+//            ++indexSim1;
+//        } else {
+//            if (events2[indexSim2].tick - events1[indexSim1].tick == 1) {
+//                events2[indexSim2].tick = events1[indexSim1].tick;
+//            }
+//            ++indexSim2;
+//        }
+//    }
 
     for (const auto& event : events1) {
         std::cerr << event.toString() << '\n';
@@ -339,7 +407,11 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 
     double score1 = 0.0;
     for (const auto& event : events1) {
-        double eventScore = event.damage * (actionTicks + 1 - event.tick) / actionTicks;
+        double timeMultiplier = (actionTicks + 1.0 - event.tick) / actionTicks;
+        if (targetImportance > 1.1) {
+            timeMultiplier *= timeMultiplier;
+        }
+        double eventScore = event.damage * timeMultiplier;
         if (!event.real) {
             double prob = event.probability;
 //            for (int i = 0; i < event.shootTick; ++i) {
@@ -357,7 +429,11 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 
     double score2 = 0.0;
     for (const auto& event : events2) {
-        double eventScore = event.damage * (actionTicks + 1 - event.tick) / actionTicks;
+        double timeMultiplier = (actionTicks + 1.0 - event.tick) / actionTicks;
+        if (targetImportance > 1.1) {
+            timeMultiplier *= timeMultiplier;
+        }
+        double eventScore = event.damage * timeMultiplier;
         if (!event.real) {
             double prob = event.probability;
 //            for (int i = 0; i < event.shootTick; ++i) {
@@ -373,7 +449,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 
     std::cerr << "best score: " << score2 << '\n';
 
-    if (!areSame(score1, score2, (targetImportance > 1.0) ? 2.0 : 1e-2)) {
+    if (!areSame(score1, score2, (targetImportance > 1.1) ? 2.0 : 1e-2)) {
         if (score1 > score2) {
             return 1;
         } else {
@@ -382,39 +458,40 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
     }
 
     std::cerr << "Scores are same" << '\n';
-    std::cerr << "Target position:" << targetPos.toString() << '\n';
+    std::cerr << "targetAction: " << targetAction.toString() << '\n';
 
-    if (action1.velocity * (targetPos.x - unit.position.x) > 0 && action2.velocity * (targetPos.x - unit.position.x) < 0) {
+    if (action1.velocity * targetAction.velocity > 0 && action2.velocity * targetAction.velocity <= 0) {
         std::cerr << "WIN. Right direction\n";
         return 1;
     }
-    if (action1.velocity * (targetPos.x - unit.position.x) < 0 && action2.velocity * (targetPos.x - unit.position.x) > 0) {
+    if (action1.velocity * targetAction.velocity < 0 && action2.velocity * targetAction.velocity >= 0) {
         std::cerr << "LOSE. Wrong direction\n";
         return -1;
     }
 
-    if ((targetPos.x < unit.position.x &&
-         game.level.tiles[size_t(unit.position.x - 1)][size_t(unit.position.y)] == Tile::WALL) ||
-        (targetPos.x > unit.position.x &&
-         game.level.tiles[size_t(unit.position.x + 1)][size_t(unit.position.y)] == Tile::WALL) ||
-        targetPos.y > unit.position.y) {
-        if (action1.jump && !action2.jump) {
-            std::cerr << "WIN. We need to jump\n";
-            return 1;
-        }
-        if (!action1.jump && action2.jump) {
-            std::cerr << "LOSE. We don't need to jump\n";
-            return -1;
-        }
+    if (action1.jump == targetAction.jump && action2.jump != targetAction.jump) {
+        std::cerr << "WIN. Right jump\n";
+        return 1;
+    }
+    if (action1.jump != targetAction.jump && action2.jump == targetAction.jump) {
+        std::cerr << "LOSE. Wrong jump\n";
+        return -1;
+    }
+
+    if (action1.jumpDown == targetAction.jumpDown && action2.jumpDown != targetAction.jumpDown) {
+        std::cerr << "WIN. Right jumpDown\n";
+        return 1;
+    }
+    if (action1.jumpDown != targetAction.jumpDown && action2.jumpDown == targetAction.jumpDown) {
+        std::cerr << "LOSE. Wrong jumpDown\n";
+        return -1;
+    }
+
+    std::cerr << "No target position decision. Choose by score\n";
+    if (score1 > score2) {
+        return 1;
     } else {
-        if (!action1.jump && action2.jump) {
-            std::cerr << "WIN. We don't need to jump\n";
-            return 1;
-        }
-        if (action1.jump && !action2.jump) {
-            std::cerr << "LOSE. We need to jump\n";
-            return -1;
-        }
+        return -1;
     }
 //    double targetDistance1 = distanceSqr(sim1.units.at(unitId).position, sim1.units.at(enemyId).position);
 //    double targetDistance2 = distanceSqr(sim2.units.at(unitId).position, sim2.units.at(enemyId).position);
@@ -426,3 +503,4 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 //        return -1;
 //    }
 }
+

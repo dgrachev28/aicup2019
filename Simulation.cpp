@@ -5,6 +5,7 @@
 #include <algorithm>
 
 Simulation::Simulation(Game game,
+                       int myPlayerId,
                        Debug& debug,
                        ColorFloat color,
                        bool simMove,
@@ -12,6 +13,7 @@ Simulation::Simulation(Game game,
                        bool simShoot,
                        int microTicks)
     : game(std::move(game))
+    , myPlayerId(myPlayerId)
     , debug(debug)
     , events(std::vector<DamageEvent>())
     , color(color)
@@ -25,6 +27,7 @@ Simulation::Simulation(Game game,
     for (const Unit& u : this->game.units) {
         units[u.id] = u;
     }
+    ticksMultiplier = 1.0 / (game.properties.ticksPerSecond  * microTicks);
 }
 
 void Simulation::simulate(std::unordered_map<int, UnitAction> actions) {
@@ -75,7 +78,7 @@ void Simulation::moveX(const UnitAction& action, int unitId) {
         game.properties.unitMaxHorizontalSpeed
     );
 
-    const double moveDistance = vel / (game.properties.ticksPerSecond * microTicks);
+    const double moveDistance = vel * ticksMultiplier;
 
     auto unitRect = Rect(unit);
     unitRect.left += moveDistance;
@@ -111,8 +114,8 @@ void Simulation::moveY(const UnitAction& action, int unitId) {
             unit.jumpState = JumpState(false, 0.0, 0.0, false);
             fallDown(action, unitId);
         } else {
-            unit.jumpState.maxTime -= 1 / (game.properties.ticksPerSecond * microTicks);
-            const double moveDistance = game.properties.jumpPadJumpSpeed / (game.properties.ticksPerSecond * microTicks);
+            unit.jumpState.maxTime -= ticksMultiplier;
+            const double moveDistance = game.properties.jumpPadJumpSpeed * ticksMultiplier;
             auto unitRect = Rect(unit);
             unitRect.top += moveDistance;
             unitRect.bottom += moveDistance;
@@ -129,8 +132,8 @@ void Simulation::moveY(const UnitAction& action, int unitId) {
             unit.jumpState = JumpState(false, 0.0, 0.0, false);
             fallDown(action, unitId);
         } else {
-            unit.jumpState.maxTime -= 1 / (game.properties.ticksPerSecond * microTicks);
-            const double moveDistance = game.properties.unitJumpSpeed / (game.properties.ticksPerSecond  * microTicks);
+            unit.jumpState.maxTime -= ticksMultiplier;
+            const double moveDistance = game.properties.unitJumpSpeed * ticksMultiplier;
             auto unitRect = Rect(unit);
             unitRect.top += moveDistance;
             unitRect.bottom += moveDistance;
@@ -145,7 +148,7 @@ void Simulation::moveY(const UnitAction& action, int unitId) {
 
 void Simulation::fallDown(const UnitAction& action, int unitId) {
     Unit& unit = units[unitId];
-    const double moveDistance = game.properties.unitFallSpeed / (game.properties.ticksPerSecond * microTicks);
+    const double moveDistance = game.properties.unitFallSpeed * ticksMultiplier;
 
     auto unitRect = Rect(unit);
     bool collisionBeforeMove = checkWallCollision(unitRect, game, action.jumpDown);
@@ -164,8 +167,8 @@ void Simulation::simulateBullets() {
     std::vector<Bullet> updatedBullets = {};
     for (Bullet bullet : bullets) {
         // TODO: should I check unit collision here before bullet movement?
-        bullet.position.x += bullet.velocity.x / (game.properties.ticksPerSecond * microTicks);
-        bullet.position.y += bullet.velocity.y / (game.properties.ticksPerSecond * microTicks);
+        bullet.position.x += bullet.velocity.x * ticksMultiplier;
+        bullet.position.y += bullet.velocity.y * ticksMultiplier;
         Rect bulletRect(bullet);
         if (checkWallCollision(bulletRect, game)) {
             explode(bullet, std::nullopt);
@@ -195,8 +198,8 @@ void Simulation::explode(const Bullet& bullet,
             *unitId,
             bullet.damage,
             bullet.real,
-            bullet.probability,
-            game.currentTick - bullet.shootTick
+            calculateHitProbability(bullet, units[*unitId]),
+            bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick
         });
     }
     if (bullet.explosionParams) {
@@ -215,22 +218,50 @@ void Simulation::explode(const Bullet& bullet,
                     id,
                     double(bullet.explosionParams->damage),
                     bullet.real,
-                    bullet.probability,
-                    game.currentTick - bullet.shootTick
+                    calculateHitProbability(bullet, unit),
+                    bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick
                 });
             }
         }
     }
 }
 
+double Simulation::calculateHitProbability(const Bullet& bullet, const Unit& targetUnit) {
+    if (bullet.real) {
+        return 1.0;
+    }
+    Rect target(targetUnit);
+    Vec2Double shootPosition = bullet.virtualParams->shootPosition;
+    double deltaAngle1 = fabs(atan2(target.top - shootPosition.y, target.right - shootPosition.x)
+                              - atan2(target.bottom - shootPosition.y, target.left - shootPosition.x));
+    if (deltaAngle1 > M_PI_2) {
+        deltaAngle1 = fabs(deltaAngle1 - M_PI);
+    }
+    if (deltaAngle1 > M_PI_2) {
+        deltaAngle1 = fabs(deltaAngle1 - M_PI);
+    }
+
+    double deltaAngle2 = fabs(atan2(target.top - shootPosition.y, target.left - shootPosition.x)
+                              - atan2(target.bottom - shootPosition.y, target.right - shootPosition.x));
+    if (deltaAngle2 > M_PI_2) {
+        deltaAngle2 = fabs(deltaAngle2 - M_PI);
+    }
+    if (deltaAngle2 > M_PI_2) {
+        deltaAngle2 = fabs(deltaAngle2 - M_PI);
+    }
+    double deltaAngle = deltaAngle1 > deltaAngle2 ? deltaAngle1 : deltaAngle2;
+    double spreadAngle = 2 * bullet.virtualParams->spread;
+    return deltaAngle / spreadAngle;
+}
+
 void Simulation::simulateShoot(const UnitAction& action, int unitId) {
     Unit& unit = units[unitId];
-    if (!unit.weapon) {
+    if (!unit.weapon || (unit.playerId == myPlayerId && unit.weapon->typ == ROCKET_LAUNCHER)) {
         return;
     }
     if (!action.shoot || (unit.weapon->fireTimer && *(unit.weapon->fireTimer) > 1e-9)) {
-        unit.weapon->fireTimer = *(unit.weapon->fireTimer) - 1 / (game.properties.ticksPerSecond * microTicks);
-        unit.weapon->spread -= unit.weapon->params.aimSpeed / (game.properties.ticksPerSecond * microTicks);
+        unit.weapon->fireTimer = *(unit.weapon->fireTimer) - ticksMultiplier;
+        unit.weapon->spread -= unit.weapon->params.aimSpeed * ticksMultiplier;
         unit.weapon->spread = std::clamp(unit.weapon->spread, unit.weapon->params.minSpread, unit.weapon->params.maxSpread);
     } else {
         int enemyUnitId;
@@ -251,18 +282,18 @@ void Simulation::simulateShoot(const UnitAction& action, int unitId) {
         unit.weapon->spread += unit.weapon->params.recoil;
         unit.weapon->spread = std::clamp(unit.weapon->spread, unit.weapon->params.minSpread, unit.weapon->params.maxSpread);
 //        if (unit.weapon->typ == ASSAULT_RIFLE) {
-//            unit.weapon->spread -= unit.weapon->params.aimSpeed / (game.properties.ticksPerSecond * microTicks);
+//            unit.weapon->spread -= unit.weapon->params.aimSpeed * ticksMultiplier;
 //            unit.weapon->spread = std::clamp(unit.weapon->spread,
 //                                             unit.weapon->params.minSpread,
 //                                             unit.weapon->params.maxSpread);
 //        }
         unit.weapon->lastFireTick = game.currentTick;
 
-        debug.draw(CustomData::Rect(
-            Vec2Float(unit.position.x - unit.size.x / 2, unit.position.y),
-            Vec2Float(unit.size.x, unit.size.y),
-            color
-        ));
+//        debug.draw(CustomData::Rect(
+//            Vec2Float(unit.position.x - unit.size.x / 2, unit.position.y),
+//            Vec2Float(unit.size.x, unit.size.y),
+//            color
+//        ));
     }
 }
 
@@ -275,30 +306,9 @@ void Simulation::createBullets(const UnitAction& action, int unitId, const Rect&
     for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
         auto bulletPos = unit.position;
         bulletPos.y += unit.size.y / 2;
-
         double angle = aimAngle + unit.weapon->spread * i / (angleStepsRange == 0 ? 1 : angleStepsRange);
         auto bulletVel = Vec2Double(cos(angle) * unit.weapon->params.bullet.speed,
                                     sin(angle) * unit.weapon->params.bullet.speed);
-
-        double deltaAngle1 = fabs(atan2(targetUnit.top - unit.position.y, targetUnit.right - unit.position.x)
-                                  - atan2(targetUnit.bottom - unit.position.y, targetUnit.left - unit.position.x));
-        if (deltaAngle1 > M_PI_2) {
-            deltaAngle1 = fabs(deltaAngle1 - M_PI);
-        }
-        if (deltaAngle1 > M_PI_2) {
-            deltaAngle1 = fabs(deltaAngle1 - M_PI);
-        }
-
-        double deltaAngle2 = fabs(atan2(targetUnit.top - unit.position.y, targetUnit.left - unit.position.x)
-                                 - atan2(targetUnit.bottom - unit.position.y, targetUnit.right - unit.position.x));
-        if (deltaAngle2 > M_PI_2) {
-            deltaAngle2 = fabs(deltaAngle2 - M_PI);
-        }
-        if (deltaAngle2 > M_PI_2) {
-            deltaAngle2 = fabs(deltaAngle2 - M_PI);
-        }
-        double deltaAngle = deltaAngle1 > deltaAngle2 ? deltaAngle1 : deltaAngle2;
-        double spreadAngle = 2 * unit.weapon->spread;
 
         Bullet bullet(
             unit.weapon->typ,
@@ -309,9 +319,12 @@ void Simulation::createBullets(const UnitAction& action, int unitId, const Rect&
             double(unit.weapon->params.bullet.damage) / angleStepsCount,
                 unit.weapon->params.bullet.size,
             unit.weapon->params.explosion,
-            deltaAngle / spreadAngle,
-            game.currentTick,
-            false
+            false,
+            VirtualBulletParams{
+                game.currentTick,
+                bulletPos,
+                unit.weapon->spread
+            }
         );
         if (unit.weapon->params.explosion) {
             bullet.explosionParams = std::make_shared<ExplosionParams>(
@@ -322,4 +335,3 @@ void Simulation::createBullets(const UnitAction& action, int unitId, const Rect&
     }
 
 }
-

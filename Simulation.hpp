@@ -11,6 +11,7 @@ class Simulation {
 public:
     explicit Simulation(
         Game game,
+        int myPlayerId,
         Debug& debug,
         ColorFloat color = ColorFloat(1.0, 0.0, 0.0, 0.5),
         bool simMove = true,
@@ -29,8 +30,9 @@ private:
 
     void simulateBullets();
 
-    void explode(const Bullet& bullet,
-                 std::optional<int> unitId);
+    void explode(const Bullet& bullet, std::optional<int> unitId);
+
+    double calculateHitProbability(const Bullet& bullet, const Unit& targetUnit);
 
     void simulateShoot(const UnitAction& action, int unitId);
 
@@ -46,10 +48,12 @@ public:
 private:
     int startTick;
     int microTicks;
+    double ticksMultiplier;
 
     bool simMove;
     bool simBullets;
     bool simShoot;
+    int myPlayerId;
 };
 
 #endif

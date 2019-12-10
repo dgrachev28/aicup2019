@@ -14,9 +14,18 @@ public:
 
     UnitAction getAction(const Unit& unit, const Game& game, Debug& debug);
 
-    std::optional<UnitAction> avoidBullets(const Unit& unit, const Game& game, const Vec2Double& targetPos, double targetImportance, Debug& debug);
+    Vec2Double predictShootAngle(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug);
 
-    bool shouldShoot(Unit unit, Vec2Double aim, const Game& game, Debug& debug);
+    std::optional<UnitAction> avoidBullets(
+        const Unit& unit,
+        const Game& game,
+        const Vec2Double& targetPos,
+        double targetImportance,
+        const UnitAction& targetAction,
+        Debug& debug
+    );
+
+    bool shouldShoot(Unit unit, int enemyUnitId, Vec2Double aim, const Game& game, Debug& debug);
 
     int compareSimulations(
         const Simulation& sim1,
@@ -27,7 +36,8 @@ public:
         const Unit& unit,
         int actionTicks,
         const Vec2Double& targetPos,
-        double targetImportance
+        double targetImportance,
+        const UnitAction& targetAction
     );
 
 private:

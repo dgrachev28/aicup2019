@@ -10,11 +10,10 @@ Bullet::Bullet(WeaponType weaponType,
                double damage,
                double size,
                std::shared_ptr<ExplosionParams> explosionParams,
-               double probability,
-               int shootTick,
-               bool real)
+               bool real,
+               std::optional<VirtualBulletParams> virtualParams)
     : weaponType(weaponType), unitId(unitId), playerId(playerId), position(position), velocity(velocity),
-      damage(damage), size(size), explosionParams(explosionParams), probability(probability), shootTick(shootTick), real(real) {}
+      damage(damage), size(size), explosionParams(explosionParams), real(real), virtualParams(virtualParams) {}
 Bullet Bullet::readFrom(InputStream& stream) {
     Bullet result;
     switch (stream.readInt()) {

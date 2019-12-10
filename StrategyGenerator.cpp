@@ -1,7 +1,7 @@
 #include "StrategyGenerator.hpp"
 #include "Util.hpp"
 
-std::vector<UnitAction> StrategyGenerator::getActions(int actionsCount, int moveDirection, bool jump, bool jumpDown) const {
+std::vector<UnitAction> StrategyGenerator::getActions(int actionsCount, int moveDirection, bool jump, bool jumpDown){
     std::vector<UnitAction> actions;
     for (int i = 0; i < actionsCount; ++i) {
         UnitAction action;
@@ -17,7 +17,7 @@ std::vector<UnitAction> StrategyGenerator::getActions(int actionsCount, int move
     return actions;
 }
 
-void StrategyGenerator::updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action) const {
+void StrategyGenerator::updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action) {
     const Unit& unit = units[unitId];
     const Unit* nearestEnemy = nullptr;
     for (const auto& [id, other] : units) {
