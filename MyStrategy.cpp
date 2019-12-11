@@ -111,9 +111,18 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
         game.level.tiles[size_t(unit.position.x)][size_t(unit.position.y - 1)] == Tile::PLATFORM) {
         jump = false;
     }
+    double vel = targetPos.x - unit.position.x;
 
+    if (vel > 0) {
+        vel = 100.0;
+    } else {
+        vel = -100.0;
+    }
+    if (fabs(targetPos.x - unit.position.x) < 0.1) {
+        vel = 0.0;
+    }
     UnitAction action;
-    action.velocity = (targetPos.x - unit.position.x) * 100;
+    action.velocity = vel;
     action.jump = jump;
     action.jumpDown = jumpDown;
     action.aim = aim;
@@ -169,6 +178,14 @@ Vec2Double MyStrategy::predictShootAngle(const Unit& unit, const Unit& enemyUnit
     std::unordered_map<int, UnitAction> params;
     int simulationMaxTicks = 40;
     const auto& actions = StrategyGenerator::getActions(simulationMaxTicks, 0, false, false);
+
+    if (unit.weapon && unit.weapon->fireTimer) {
+        for (int ticks = 0; ticks < *(unit.weapon->fireTimer) * 60.0; ++ticks) {
+            params[enemyUnit.id] = actions[ticks];
+            sim.simulate(params);
+            enemyPosition = sim.units[enemyUnit.id].position;
+        }
+    }
 
     for (int ticks = 0; ticks < simulationMaxTicks; ++ticks) {
         double distSqr = distanceSqr(enemyPosition, unit.position);
@@ -240,7 +257,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             params[enemyUnitId] = actionSet[i];
             sim.simulate(params);
         }
-        if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet[0], *bestAction, game,
+        if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet[0], enemyActionSets[bestEnemyActionIndex][0], game,
                                                           unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
             if (bestEnemySim == nullptr) {
                 std::cerr << "First simulation\n";
@@ -460,11 +477,11 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
     std::cerr << "Scores are same" << '\n';
     std::cerr << "targetAction: " << targetAction.toString() << '\n';
 
-    if (action1.velocity * targetAction.velocity > 0 && action2.velocity * targetAction.velocity <= 0) {
+    if (areSame(action1.velocity, targetAction.velocity) && !areSame(action2.velocity, targetAction.velocity)) {
         std::cerr << "WIN. Right direction\n";
         return 1;
     }
-    if (action1.velocity * targetAction.velocity < 0 && action2.velocity * targetAction.velocity >= 0) {
+    if (!areSame(action1.velocity, targetAction.velocity) && areSame(action2.velocity, targetAction.velocity)) {
         std::cerr << "LOSE. Wrong direction\n";
         return -1;
     }
