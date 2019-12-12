@@ -16,7 +16,6 @@ Unit Unit::readFrom(InputStream& stream) {
     result.onLadder = stream.readBool();
     result.mines = stream.readInt();
     if (stream.readBool()) {
-        result.weapon = Weapon();
         result.weapon = Weapon::readFrom(stream);
     } else {
         result.weapon = std::nullopt;

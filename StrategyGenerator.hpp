@@ -9,7 +9,7 @@
 
 class StrategyGenerator {
 public:
-    static std::vector<UnitAction> getActions(int actionsCount, int moveDirection, bool jump, bool jumpDown);
+    static std::vector<UnitAction> getActions(int actionsCount, double move, bool jump, bool jumpDown);
     static void updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action);
 };
 

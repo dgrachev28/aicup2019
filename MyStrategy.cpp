@@ -7,8 +7,14 @@
 MyStrategy::MyStrategy() {}
 
 
-UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
-                                 Debug& debug) {
+UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debug) {
+    if (game.currentTick == 0) {
+        buildPathGraph(unit, game, debug);
+        floydWarshall();
+    }
+
+    std::cerr << "PATHS SIZE:" << paths.size() << '\n';
+
     if (simulation) {
         simulation->game.currentTick = game.currentTick;
         simulation->bullets = game.bullets;
@@ -42,53 +48,10 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
             }
         }
     }
-    const LootBox* nearestWeapon = nullptr;
-    for (const LootBox& lootBox : game.lootBoxes) {
-        if (std::dynamic_pointer_cast<Item::Weapon>(lootBox.item)) {
-            if (nearestWeapon == nullptr ||
-                distanceSqr(unit.position, lootBox.position) <
-                distanceSqr(unit.position, nearestWeapon->position)) {
-                if (std::dynamic_pointer_cast<Item::Weapon>(lootBox.item)->weaponType != ROCKET_LAUNCHER) {
-                    nearestWeapon = &lootBox;
-                }
-            }
-        }
-    }
 
-    const LootBox* nearestHealthPack = nullptr;
-    for (const LootBox& lootBox : game.lootBoxes) {
-        if (std::dynamic_pointer_cast<Item::HealthPack>(lootBox.item)) {
-            if (nearestHealthPack == nullptr ||
-                distanceSqr(unit.position, lootBox.position) <
-                distanceSqr(unit.position, nearestHealthPack->position)) {
-                nearestHealthPack = &lootBox;
-            }
-        }
-    }
+    double targetImportance;
+    const auto& targetPos = findTargetPosition(unit, nearestEnemy, game, debug, targetImportance);
 
-    Vec2Double targetPos = unit.position;
-    double targetImportance = 1.0;
-    if ((!unit.weapon || unit.weapon->typ == ROCKET_LAUNCHER) && nearestWeapon != nullptr) {
-        targetPos = nearestWeapon->position;
-    } else if (nearestHealthPack != nullptr && unit.health <= 90.0) {
-        targetPos = nearestHealthPack->position;
-        if (unit.health <= 90.0) {
-            targetImportance = 10.0;
-        }
-        if (unit.health <= 80.0) {
-            targetImportance = 50.0;
-        }
-        if (unit.health <= 60.0) {
-            targetImportance = 100.0;
-        }
-    } else if (nearestEnemy != nullptr) {
-        double desiredDistance = (nearestEnemy->weapon && nearestEnemy->weapon->typ == ROCKET_LAUNCHER) ? 49.0 : 9.0;
-        if (distanceSqr(unit.position, nearestEnemy->position) > desiredDistance) {
-            targetPos = Vec2Double(nearestEnemy->position.x, nearestEnemy->position.y + nearestEnemy->size.y);
-        } else {
-            targetPos = unit.position.x > nearestEnemy->position.x ? Vec2Double(50.0, 50.0) : Vec2Double(0.0, 50.0);
-        }
-    }
     debug.draw(CustomData::Log(
         std::string("Target pos: ") + targetPos.toString()));
     Vec2Double aim = Vec2Double(0, 0);
@@ -114,9 +77,9 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game,
     double vel = targetPos.x - unit.position.x;
 
     if (vel > 0) {
-        vel = 100.0;
+        vel = 10.0;
     } else {
-        vel = -100.0;
+        vel = -10.0;
     }
     if (fabs(targetPos.x - unit.position.x) < 0.1) {
         vel = 0.0;
@@ -213,12 +176,12 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
         StrategyGenerator::getActions(actionTicks, 1, true, false),
         StrategyGenerator::getActions(actionTicks, 0, true, false),
         StrategyGenerator::getActions(actionTicks, -1, true, false),
+        StrategyGenerator::getActions(actionTicks, 1, false, false),
+        StrategyGenerator::getActions(actionTicks, 0, false, false),
+        StrategyGenerator::getActions(actionTicks, -1, false, false),
         StrategyGenerator::getActions(actionTicks, 1, false, true),
         StrategyGenerator::getActions(actionTicks, 0, false, true),
-        StrategyGenerator::getActions(actionTicks, -1, false, true),
-        StrategyGenerator::getActions(actionTicks, 1, false, false),
-        StrategyGenerator::getActions(actionTicks, 0, false, true),
-        StrategyGenerator::getActions(actionTicks, -1, false, false)
+        StrategyGenerator::getActions(actionTicks, -1, false, true)
     };
 
     std::vector<std::vector<UnitAction>> enemyActionSets = {
@@ -241,7 +204,12 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
         ColorFloat(1.0, 0.0, 0.0, 0.3),
         ColorFloat(0.0, 1.0, 0.0, 0.3),
         ColorFloat(0.0, 0.0, 1.0, 0.3),
-        ColorFloat(1.0, 1.0, 0.0, 0.3)
+        ColorFloat(1.0, 1.0, 0.0, 0.3),
+        ColorFloat(1.0, 1.0, 0.0, 0.3),
+        ColorFloat(1.0, 1.0, 0.0, 0.3),
+        ColorFloat(1.0, 1.0, 0.0, 0.3),
+        ColorFloat(1.0, 1.0, 0.0, 0.3),
+        ColorFloat(1.0, 1.0, 0.0, 0.3),
     };
 
     int colorIndex = 0;
@@ -257,22 +225,19 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             params[enemyUnitId] = actionSet[i];
             sim.simulate(params);
         }
+        std::cerr << "Consider action: " << actionSet[0].toString() << '\n';
+        for (const auto& event : sim.events) {
+            std::cerr << event.toString() << '\n';
+        }
         if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet[0], enemyActionSets[bestEnemyActionIndex][0], game,
                                                           unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
-            if (bestEnemySim == nullptr) {
-                std::cerr << "First simulation\n";
-                for (const auto& event : sim.events) {
-                    std::cerr << event.toString() << '\n';
-                }
-                std::cerr << '\n';
-            }
             bestEnemySim = std::make_shared<Simulation>(sim);
             bestEnemyActionIndex = colorIndex;
         }
         ++colorIndex;
     }
 
-    std::cerr << "Finish enemy simulation!!!\n";
+    std::cerr << "Best enemy action: " << enemyActionSets[bestEnemyActionIndex][0].toString() << '\n';
 
     colorIndex = 0;
     bool noEvents = true;
@@ -291,15 +256,13 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
 //            Vec2Float(sim.units[unit.id].size.x, sim.units[unit.id].size.y),
 //            colors[colorIndex]
 //        ));
+
+        std::cerr << "Consider action: " << actionSet[0].toString() << '\n';
+        for (const auto& event : sim.events) {
+            std::cerr << event.toString() << '\n';
+        }
         if (bestSim == nullptr || compareSimulations(sim, *bestSim, actionSet[0], *bestAction, game,
                                                      unit, actionTicks, targetPos, targetImportance, targetAction) > 0) {
-            if (bestSim == nullptr) {
-                std::cerr << "First simulation\n";
-                for (const auto& event : sim.events) {
-                    std::cerr << event.toString() << '\n';
-                }
-                std::cerr << '\n';
-            }
             bestSim = std::make_shared<Simulation>(sim);
             bestAction = actionSet[0];
         }
@@ -418,22 +381,18 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 //        }
 //    }
 
-    for (const auto& event : events1) {
-        std::cerr << event.toString() << '\n';
-    }
-
     double score1 = 0.0;
     for (const auto& event : events1) {
-        double timeMultiplier = (actionTicks + 1.0 - event.tick) / actionTicks;
-        if (targetImportance > 1.1) {
-            timeMultiplier *= timeMultiplier;
+        double timeMultiplier = 1.0;
+        for (int i = 0; i < event.tick; ++i) {
+            timeMultiplier *= 0.93;
         }
         double eventScore = event.damage * timeMultiplier;
         if (!event.real) {
             double prob = event.probability;
-//            for (int i = 0; i < event.shootTick; ++i) {
-//                prob *= 0.95;
-//            }
+            for (int i = 0; i < event.shootTick; ++i) {
+                prob *= 0.93;
+            }
             eventScore *= std::min(prob, 1.0);
         }
         if (event.unitId == unitId) {
@@ -446,16 +405,16 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 
     double score2 = 0.0;
     for (const auto& event : events2) {
-        double timeMultiplier = (actionTicks + 1.0 - event.tick) / actionTicks;
-        if (targetImportance > 1.1) {
-            timeMultiplier *= timeMultiplier;
+        double timeMultiplier = 1.0;
+        for (int i = 0; i < event.tick; ++i) {
+            timeMultiplier *= 0.93;
         }
         double eventScore = event.damage * timeMultiplier;
         if (!event.real) {
             double prob = event.probability;
-//            for (int i = 0; i < event.shootTick; ++i) {
-//                prob *= 0.95;
-//            }
+            for (int i = 0; i < event.shootTick; ++i) {
+                prob *= 0.93;
+            }
             eventScore *= std::min(prob, 1.0);
         }
         if (event.unitId == unitId) {
@@ -466,7 +425,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 
     std::cerr << "best score: " << score2 << '\n';
 
-    if (!areSame(score1, score2, (targetImportance > 1.1) ? 2.0 : 1e-2)) {
+    if (!areSame(score1, score2, (targetImportance > 1.1) ? 3.5 : 0.5)) {
         if (score1 > score2) {
             return 1;
         } else {
@@ -519,5 +478,253 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 //    } else {
 //        return -1;
 //    }
+}
+
+void MyStrategy::buildPathGraph(const Unit& unit, const Game& game, Debug& debug) {
+    std::vector<UnitAction> actions = {
+        StrategyGenerator::getActions(1, 1, true, false)[0],
+        StrategyGenerator::getActions(1, 0.5, true, false)[0],
+        StrategyGenerator::getActions(1, 0.25, true, false)[0],
+        StrategyGenerator::getActions(1, 0, true, false)[0],
+        StrategyGenerator::getActions(1, -0.25, true, false)[0],
+        StrategyGenerator::getActions(1, -0.5, true, false)[0],
+        StrategyGenerator::getActions(1, -1, true, false)[0],
+        StrategyGenerator::getActions(1, 1, false, true)[0],
+        StrategyGenerator::getActions(1, 0, false, true)[0],
+        StrategyGenerator::getActions(1, -1, false, true)[0],
+        StrategyGenerator::getActions(1, 1, false, false)[0],
+        StrategyGenerator::getActions(1, -1, false, false)[0]
+    };
+    pathDfs(int(unit.position.x), int(unit.position.y), actions, unit, game, debug);
+}
+
+void MyStrategy::pathDfs(int x, int y, const std::vector<UnitAction>& actions, const Unit& unit, const Game& game, Debug& debug) {
+    Vec2Double pos(x, y);
+    if (paths.find(getPathsIndex(pos)) != paths.end()) {
+        return;
+    }
+    paths[getPathsIndex(pos)] = std::unordered_map<int16_t, int16_t>();
+    for (const auto& action : actions) {
+        Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 1.0, 1.0, 0.3), true, false, false, 3);
+        sim.units[unit.id].position.x = x + 0.5;
+        sim.units[unit.id].position.y = y;
+
+        std::unordered_map<int, UnitAction> params;
+        Vec2Double prevSimPosition = sim.units[unit.id].position;
+        for (int tick = 1; tick < 200; ++tick) {
+            params[unit.id] = action;
+            sim.simulate(params);
+            Vec2Double simPosition = sim.units[unit.id].position;
+            if (areSame(prevSimPosition.x, simPosition.x) && areSame(prevSimPosition.y, simPosition.y)) {
+                break;
+            }
+            prevSimPosition = simPosition;
+            if ((simPosition.y - int(simPosition.y) < game.properties.unitFallSpeed / 60 + 1e-5 ||
+                 game.level.tiles[int(simPosition.x)][int(simPosition.y)] == JUMP_PAD) &&
+                (int(simPosition.y) != y || int(simPosition.x) != x)) {
+                if (game.level.tiles[int(simPosition.x)][int(simPosition.y)] != PLATFORM &&
+                    (game.level.tiles[int(simPosition.x)][int(simPosition.y)] != EMPTY ||
+                     game.level.tiles[int(simPosition.x)][int(simPosition.y - 1)] != EMPTY)) {
+
+                    double restTime = fabs(int(simPosition.x) + 0.5 - simPosition.x) * 6;
+                    int posIdx = getPathsIndex(pos);
+                    int simPosIdx = getPathsIndex(simPosition);
+                    if (paths[posIdx].find(simPosIdx) == paths[posIdx].end() ||
+                        tick + std::round(restTime) < paths[posIdx][simPosIdx]) {
+                        paths[posIdx][simPosIdx] = tick + std::round(restTime);
+                        pathDfs(int(simPosition.x), int(simPosition.y), actions, unit, game, debug);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void MyStrategy::floydWarshall() {
+    for (const auto& [key, value] : paths) {
+        paths[key][key] = 0;
+        for (const auto& [key1, value1] : paths) {
+            if (paths[key].find(key1) == paths[key].end()) {
+                paths[key][key1] = 10000;
+            }
+        }
+    }
+
+    for (const auto& [k, valueK] : paths) {
+        std::cerr << k << ' ';
+        for (const auto& [i, valueI] : paths) {
+            for (const auto& [j, valueJ] : paths) {
+                paths[i][j] = std::min<int16_t>(paths[i][j], paths[i][k] + paths[k][j]);
+            }
+        }
+    }
+}
+
+int MyStrategy::getPathsIndex(const Vec2Double& vec) {
+    return int(vec.y) * 40 + int(vec.x);
+}
+
+Vec2Double MyStrategy::fromPathsIndex(int idx) {
+    return Vec2Double(idx % 40 + 0.5, idx / 40);
+}
+
+Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestEnemy, const Game& game, Debug& debug, double& targetImportance) {
+    const LootBox* nearestWeapon = nullptr;
+    for (const LootBox& lootBox : game.lootBoxes) {
+        if (std::dynamic_pointer_cast<Item::Weapon>(lootBox.item)) {
+            if (nearestWeapon == nullptr ||
+                distanceSqr(unit.position, lootBox.position) <
+                distanceSqr(unit.position, nearestWeapon->position)) {
+                if (std::dynamic_pointer_cast<Item::Weapon>(lootBox.item)->weaponType != ROCKET_LAUNCHER) {
+                    nearestWeapon = &lootBox;
+                }
+            }
+        }
+    }
+
+    std::vector<LootBox> healthPacks;
+    std::vector<double> myHPDistance;
+    std::vector<double> enemyHPDistance;
+    for (const LootBox& lootBox : game.lootBoxes) {
+        if (std::dynamic_pointer_cast<Item::HealthPack>(lootBox.item)) {
+            double myDistance = calculatePathDistance(unit.position, lootBox.position, unit, game, debug);
+            double enemyDistance = calculatePathDistance(nearestEnemy->position, lootBox.position, *nearestEnemy, game, debug);
+            healthPacks.push_back(lootBox);
+            myHPDistance.push_back(myDistance);
+            enemyHPDistance.push_back(enemyDistance);
+        }
+    }
+
+    Vec2Double targetPos = unit.position;
+    targetImportance = 1.0;
+    if ((!unit.weapon || unit.weapon->typ == ROCKET_LAUNCHER) && nearestWeapon != nullptr) {
+        targetPos = nearestWeapon->position;
+    } else if (!healthPacks.empty() && unit.health <= 90.0) {
+        LootBox* bestHealthPack = nullptr;
+        double minDistance = 10000.0;
+        for (int i = 0; i < healthPacks.size(); ++i) {
+            std::cerr << "Iteration " << i << ", myHPDistance: " << myHPDistance[i] << '\n';
+            std::cerr << "Iteration " << i << ", enemyHPDistance: " << enemyHPDistance[i] << '\n';
+            if (myHPDistance[i] < enemyHPDistance[i] && myHPDistance[i] < minDistance) {
+                minDistance = myHPDistance[i];
+                bestHealthPack = &healthPacks[i];
+            }
+        }
+        std::cerr << "min distance: " << minDistance << '\n';
+        double minDistanceDiff = 10000.0;
+        if (bestHealthPack == nullptr) {
+            for (int i = 0; i < healthPacks.size(); ++i) {
+                double distanceDiff = myHPDistance[i] - enemyHPDistance[i];
+                if (distanceDiff < minDistanceDiff) {
+                    minDistanceDiff = distanceDiff;
+                    bestHealthPack = &healthPacks[i];
+                }
+            }
+        }
+
+        std::cerr << "min distance diff: " << minDistance << '\n';
+
+        targetPos = bestHealthPack->position;
+        targetImportance = 10.0;
+    } else if (!healthPacks.empty()) {
+
+        int bestTileIndex = 0;
+        int bestWinHealthPackPathNum = 0;
+        double minHealthPackDistanceSum = 200000.0;
+
+        for (const auto& [key, value] : paths) {
+            double sum = 0.0;
+            int winHealthPackPathNum = 0;
+
+            for (int i = 0; i < healthPacks.size(); ++i) {
+                double myDistance = paths[key][getPathsIndex(healthPacks[i].position)];
+                if (myDistance < enemyHPDistance[i]) {
+                    ++winHealthPackPathNum;
+                } else {
+                    --winHealthPackPathNum;
+                }
+                sum += myDistance;
+            }
+
+            if (winHealthPackPathNum > bestWinHealthPackPathNum ||
+                (winHealthPackPathNum == bestWinHealthPackPathNum && sum < minHealthPackDistanceSum)) {
+                bestWinHealthPackPathNum = winHealthPackPathNum;
+                minHealthPackDistanceSum = sum;
+                bestTileIndex = key;
+            }
+        }
+        targetPos = fromPathsIndex(bestTileIndex);
+        std::cerr << "Best win healthpacks num: " << bestWinHealthPackPathNum << '\n';
+        std::cerr << "Target position from paths: " << targetPos.toString() << '\n';
+    } else if (nearestEnemy != nullptr) {
+        double desiredDistance = (nearestEnemy->weapon && nearestEnemy->weapon->typ == ROCKET_LAUNCHER) ? 81.0 : 9.0;
+        if (distanceSqr(unit.position, nearestEnemy->position) > desiredDistance) {
+            targetPos = Vec2Double(nearestEnemy->position.x, nearestEnemy->position.y + nearestEnemy->size.y / 2);
+        } else {
+            targetPos = unit.position.x > nearestEnemy->position.x ? Vec2Double(50.0, 50.0) : Vec2Double(0.0, 50.0);
+        }
+    }
+    return targetPos;
+}
+
+double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double& dst,
+                                         const Unit& unit, const Game& game, Debug& debug) {
+    int srcIdx = getPathsIndex(src);
+    int dstIdx = getPathsIndex(dst);
+    if (paths.find(dstIdx) == paths.end()) {
+        std::cerr << "ERROR WITH PATH FINDING\n";
+        return -1;
+    }
+    if (paths.find(srcIdx) != paths.end()) {
+        return paths[srcIdx][dstIdx];
+    }
+
+    std::vector<UnitAction> actions = {
+        StrategyGenerator::getActions(1, 1, true, false)[0],
+        StrategyGenerator::getActions(1, 0.5, true, false)[0],
+        StrategyGenerator::getActions(1, 0.25, true, false)[0],
+        StrategyGenerator::getActions(1, 0, true, false)[0],
+        StrategyGenerator::getActions(1, -0.25, true, false)[0],
+        StrategyGenerator::getActions(1, -0.5, true, false)[0],
+        StrategyGenerator::getActions(1, -1, true, false)[0],
+        StrategyGenerator::getActions(1, 1, false, true)[0],
+        StrategyGenerator::getActions(1, 0, false, true)[0],
+        StrategyGenerator::getActions(1, -1, false, true)[0],
+        StrategyGenerator::getActions(1, 1, false, false)[0],
+        StrategyGenerator::getActions(1, -1, false, false)[0]
+    };
+
+    double minPathDistance = 1000.0;
+
+    for (const auto& action : actions) {
+        Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 1.0, 1.0, 0.3), true, false, false, 3);
+
+        std::unordered_map<int, UnitAction> params;
+        Vec2Double prevSimPosition = sim.units[unit.id].position;
+        for (int tick = 1; tick < 200; ++tick) {
+            params[unit.id] = action;
+            sim.simulate(params);
+            Vec2Double simPosition = sim.units[unit.id].position;
+            if (areSame(prevSimPosition.x, simPosition.x) && areSame(prevSimPosition.y, simPosition.y)) {
+                break;
+            }
+            prevSimPosition = simPosition;
+            if ((simPosition.y - int(simPosition.y) < game.properties.unitFallSpeed / 60 + 1e-5 ||
+                 game.level.tiles[int(simPosition.x)][int(simPosition.y)] == JUMP_PAD) &&
+                (int(simPosition.y) != unit.position.y || int(simPosition.x) != unit.position.x)) {
+                if (paths.find(getPathsIndex(simPosition)) != paths.end()) {
+                    double restTime = fabs(int(simPosition.x) + 0.5 - simPosition.x) * 6;
+                    double pathDistance = tick + std::round(restTime) + paths[getPathsIndex(simPosition)][dstIdx];
+                    if (pathDistance < minPathDistance) {
+                        minPathDistance = pathDistance;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    return minPathDistance;
 }
 

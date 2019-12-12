@@ -83,9 +83,10 @@ void Simulation::moveX(const UnitAction& action, int unitId) {
     auto unitRect = Rect(unit);
     unitRect.left += moveDistance;
     unitRect.right += moveDistance;
-    if (!checkWallCollision(unitRect, game) && !checkUnitsCollision(unitRect, unitId, units)) {
+    bool unitsCollision = checkUnitsCollision(unitRect, unitId, units);
+    if (!checkWallCollision(unitRect, game) && !unitsCollision) {
         unit.position.x += moveDistance;
-    } else {
+    } else if (!unitsCollision) {
         if (moveDistance < 0) {
             unit.position.x = int(unit.position.x) + unit.size.x / 2;
         } else {
@@ -165,8 +166,21 @@ void Simulation::fallDown(const UnitAction& action, int unitId) {
 
 void Simulation::simulateBullets() {
     std::vector<Bullet> updatedBullets = {};
+    std::vector<Bullet> explodedUnitsBullets;
     for (Bullet bullet : bullets) {
         // TODO: should I check unit collision here before bullet movement?
+        bool dontPush = false;
+        for (auto& explodedBullet : explodedUnitsBullets) {
+            if (!bullet.real && bullet.virtualParams->shootTick == explodedBullet.virtualParams->shootTick &&
+                areSame(bullet.virtualParams->shootPosition.x, explodedBullet.virtualParams->shootPosition.x) &&
+                areSame(bullet.virtualParams->shootPosition.y, explodedBullet.virtualParams->shootPosition.y)) {
+                dontPush = true;
+                break;
+            }
+        }
+        if (dontPush) {
+            continue;
+        }
         bullet.position.x += bullet.velocity.x * ticksMultiplier;
         bullet.position.y += bullet.velocity.y * ticksMultiplier;
         Rect bulletRect(bullet);
@@ -178,6 +192,9 @@ void Simulation::simulateBullets() {
         for (const auto& [unitId, unit]: units) {
             if (intersectRects(bulletRect, Rect(unit)) && bullet.unitId != unitId) {
                 explode(bullet, unitId);
+                if (!bullet.real) {
+                    explodedUnitsBullets.push_back(bullet);
+                }
                 exploded = true;
                 break;
             }
@@ -186,7 +203,21 @@ void Simulation::simulateBullets() {
             updatedBullets.push_back(bullet);
         }
     }
-    bullets = updatedBullets;
+    bullets = {};
+    for (const auto& bullet : updatedBullets) {
+        bool dontPush = false;
+        for (auto& explodedBullet : explodedUnitsBullets) {
+            if (!bullet.real && bullet.virtualParams->shootTick == explodedBullet.virtualParams->shootTick &&
+                areSame(bullet.virtualParams->shootPosition.x, explodedBullet.virtualParams->shootPosition.x) &&
+                areSame(bullet.virtualParams->shootPosition.y, explodedBullet.virtualParams->shootPosition.y)) {
+                dontPush = true;
+                break;
+            }
+        }
+        if (!dontPush) {
+            bullets.push_back(bullet);
+        }
+    }
 }
 
 void Simulation::explode(const Bullet& bullet,
@@ -300,13 +331,13 @@ void Simulation::simulateShoot(const UnitAction& action, int unitId) {
 void Simulation::createBullets(const UnitAction& action, int unitId, const Rect& targetUnit) {
     Unit& unit = units[unitId];
     double aimAngle = atan2(action.aim.y, action.aim.x);
-    int angleStepsRange = 0;
+    int angleStepsRange = 1;
     int angleStepsCount = 2 * angleStepsRange + 1;
 
     for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
         auto bulletPos = unit.position;
         bulletPos.y += unit.size.y / 2;
-        double angle = aimAngle + unit.weapon->spread * i / (angleStepsRange == 0 ? 1 : angleStepsRange);
+        double angle = aimAngle + unit.weapon->spread * i * 0.667 / (angleStepsRange == 0 ? 1 : angleStepsRange);
         auto bulletVel = Vec2Double(cos(angle) * unit.weapon->params.bullet.speed,
                                     sin(angle) * unit.weapon->params.bullet.speed);
 
@@ -316,7 +347,7 @@ void Simulation::createBullets(const UnitAction& action, int unitId, const Rect&
             unit.playerId,
             bulletPos,
             bulletVel,
-            double(unit.weapon->params.bullet.damage) / angleStepsCount,
+            double(unit.weapon->params.bullet.damage),
                 unit.weapon->params.bullet.size,
             unit.weapon->params.explosion,
             false,
@@ -329,7 +360,7 @@ void Simulation::createBullets(const UnitAction& action, int unitId, const Rect&
         if (unit.weapon->params.explosion) {
             bullet.explosionParams = std::make_shared<ExplosionParams>(
                 ExplosionParams(unit.weapon->params.explosion->radius,
-                                unit.weapon->params.explosion->damage / angleStepsCount));
+                                unit.weapon->params.explosion->damage));
         }
         bullets.push_back(bullet);
     }
