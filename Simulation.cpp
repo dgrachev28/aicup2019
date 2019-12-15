@@ -30,27 +30,27 @@ Simulation::Simulation(Game game,
     ticksMultiplier = 1.0 / (game.properties.ticksPerSecond  * microTicks);
 }
 
-void Simulation::simulate(std::unordered_map<int, UnitAction> actions) {
+void Simulation::simulate(std::unordered_map<int, UnitAction> actions, std::optional<int> microTicks) {
+    if (microTicks) {
+        ticksMultiplier = 1.0 / (game.properties.ticksPerSecond * *microTicks);
+        this->microTicks = *microTicks;
+    }
+
     ++game.currentTick;
     for (const auto& [unitId, action] : actions) {
         if (units[unitId].weapon && simShoot) {
             Weapon& weapon = *units[unitId].weapon;
-            double deltaAngle = fabs(*(weapon.lastAngle) - atan2(action.aim.y, action.aim.x));
-            if (deltaAngle > M_PI_2) {
-                deltaAngle = fabs(deltaAngle - M_PI);
-            }
-            if (deltaAngle > M_PI_2) {
-                deltaAngle = fabs(deltaAngle - M_PI);
-            }
-            weapon.spread += deltaAngle;
+            double aimAngle = atan2(action.aim.y, action.aim.x);
+            weapon.spread += findAngle(*(weapon.lastAngle), aimAngle);
             weapon.spread = std::clamp(
                 weapon.spread,
                 weapon.params.minSpread,
                 weapon.params.maxSpread
             );
+            *(weapon.lastAngle) = aimAngle;
         }
     }
-    for (int i = 0; i < microTicks; ++i) {
+    for (int i = 0; i < this->microTicks; ++i) {
         for (const auto& [unitId, action] : actions) {
             if (simMove) {
                 move(action, unitId);
@@ -263,23 +263,12 @@ double Simulation::calculateHitProbability(const Bullet& bullet, const Unit& tar
     }
     Rect target(targetUnit);
     Vec2Double shootPosition = bullet.virtualParams->shootPosition;
-    double deltaAngle1 = fabs(atan2(target.top - shootPosition.y, target.right - shootPosition.x)
-                              - atan2(target.bottom - shootPosition.y, target.left - shootPosition.x));
-    if (deltaAngle1 > M_PI_2) {
-        deltaAngle1 = fabs(deltaAngle1 - M_PI);
-    }
-    if (deltaAngle1 > M_PI_2) {
-        deltaAngle1 = fabs(deltaAngle1 - M_PI);
-    }
+    double deltaAngle1 = findAngle(Vec2Double(target.right - shootPosition.x, target.top - shootPosition.y),
+                                   Vec2Double(target.left - shootPosition.x, target.bottom - shootPosition.y));
 
-    double deltaAngle2 = fabs(atan2(target.top - shootPosition.y, target.left - shootPosition.x)
-                              - atan2(target.bottom - shootPosition.y, target.right - shootPosition.x));
-    if (deltaAngle2 > M_PI_2) {
-        deltaAngle2 = fabs(deltaAngle2 - M_PI);
-    }
-    if (deltaAngle2 > M_PI_2) {
-        deltaAngle2 = fabs(deltaAngle2 - M_PI);
-    }
+    double deltaAngle2 = findAngle(Vec2Double(target.left - shootPosition.x, target.top - shootPosition.y),
+                                   Vec2Double(target.right - shootPosition.x, target.bottom - shootPosition.y));
+
     double deltaAngle = deltaAngle1 > deltaAngle2 ? deltaAngle1 : deltaAngle2;
     double spreadAngle = 2 * bullet.virtualParams->spread;
     return deltaAngle / spreadAngle;

@@ -59,6 +59,72 @@ bool areSame(double a, double b, double precision) {
     return std::fabs(a - b) < precision;
 }
 
-double distanceSqr(Vec2Double a, Vec2Double b) {
+double distanceSqr(const Vec2Double& a, const Vec2Double& b) {
     return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
+}
+
+double length(const Vec2Double& a) {
+    return sqrt(a.x * a.x + a.y * a.y);
+}
+
+double findAngle(const Vec2Double& a, const Vec2Double& b) {
+    return acos((a.x * b.x + a.y * b.y) / (length(a) * length(b)));
+}
+
+double findAngle(double a, double b) {
+    double angle = fabs(a - b);
+    if (angle > M_PI) {
+        angle = 2 * M_PI - angle;
+    }
+    return angle;
+}
+
+// Check if angle a lies between bound1 and bound2 angles
+bool isBeetweenAngles(double a, double bound1, double bound2) {
+    double bound1Delta = findAngle(bound1, a);
+    double bound2Delta = findAngle(bound2, a);
+    double boundDelta = findAngle(bound1, bound2);
+    return areSame(bound1Delta + bound2Delta, boundDelta);
+}
+
+double sumAngles(double a, double b) {
+    double result = a + b;
+    if (result > M_PI) {
+        return result - 2 * M_PI;
+    } else if (result < -M_PI) {
+        return result + 2 * M_PI;
+    }
+    return result;
+}
+
+double minAngle(double a, double b) {
+    double angle = fabs(a - b);
+    if (angle > M_PI) {
+        return std::max(a, b);
+    }
+    return std::min(a, b);
+}
+
+double maxAngle(double a, double b) {
+    double angle = fabs(a - b);
+    if (angle > M_PI) {
+        return std::min(a, b);
+    }
+    return std::max(a, b);
+}
+
+bool isLessAngle(double a, double b) {
+    double angle = fabs(a - b);
+    if (angle > M_PI) {
+        return a > b;
+    }
+    return a < b;
+}
+
+bool isGreaterAngle(double a, double b) {
+    double angle = fabs(a - b);
+    if (angle > M_PI) {
+        return a < b;
+    }
+    return a > b;
 }

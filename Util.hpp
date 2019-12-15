@@ -44,6 +44,24 @@ bool checkLadderCollision(const Rect& rect, const Game& game);
 
 bool areSame(double a, double b, double precision = 1e-7);
 
-double distanceSqr(Vec2Double a, Vec2Double b);
+double distanceSqr(const Vec2Double& a, const Vec2Double& b);
+
+double length(const Vec2Double& a);
+
+double findAngle(const Vec2Double& a, const Vec2Double& b);
+
+double findAngle(double a, double b);
+
+bool isBeetweenAngles(double a, double bound1, double bound2);
+
+double sumAngles(double a, double b);
+
+double minAngle(double a, double b);
+
+double maxAngle(double a, double b);
+
+bool isLessAngle(double a, double b);
+
+bool isGreaterAngle(double a, double b);
 
 #endif

@@ -56,15 +56,15 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
         std::string("Target pos: ") + targetPos.toString()));
     Vec2Double aim = Vec2Double(0, 0);
     if (nearestEnemy != nullptr && unit.weapon) {
-        aim = predictShootAngle(unit, *nearestEnemy, game, debug);
+        aim = predictShootAngle2(unit, *nearestEnemy, game, debug);
     }
     bool jump = targetPos.y > unit.position.y;
-    if (targetPos.x > unit.position.x &&
+    if (targetPos.x - unit.position.x > 0.1 &&
         game.level.tiles[size_t(unit.position.x + 1)][size_t(unit.position.y)] ==
         Tile::WALL) {
         jump = true;
     }
-    if (targetPos.x < unit.position.x &&
+    if (targetPos.x - unit.position.x < 0.1 &&
         game.level.tiles[size_t(unit.position.x - 1)][size_t(unit.position.y)] ==
         Tile::WALL) {
         jump = true;
@@ -127,41 +127,102 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
     return action;
 }
 
-Vec2Double MyStrategy::predictShootAngle(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug) {
-    Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 1.0, 1.0, 0.3), true, false, false, 3);
+Vec2Double MyStrategy::predictShootAngle2(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug, bool simulateFallDown) {
+    Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 1.0, 1.0, 0.3), true, false, false, 1);
+    double lastAngle = *(unit.weapon->lastAngle);
 
+    Vec2Double aim;
+    double targetAngle;
+    bool fastMoveAngle;
     Vec2Double enemyPosition = enemyUnit.position;
-    if (enemyUnit.jumpState.canCancel || !areSame(enemyUnit.jumpState.maxTime, 0.0)) {
-        return Vec2Double(enemyPosition.x - unit.position.x,
-                          enemyPosition.y - unit.position.y);
-    }
+    if (!simulateFallDown || enemyUnit.jumpState.canCancel || !areSame(enemyUnit.jumpState.maxTime, 0.0)) {
+        aim = Vec2Double(enemyPosition.x - unit.position.x,
+                         enemyPosition.y - unit.position.y);
+    } else {
+        double speed = unit.weapon->params.bullet.speed;
 
-    double speed = unit.weapon->params.bullet.speed;
+        std::unordered_map<int, UnitAction> params;
+        int simulationMaxTicks = 30;
+        const auto& actions = StrategyGenerator::getActions(simulationMaxTicks, 0, false, false);
 
-    std::unordered_map<int, UnitAction> params;
-    int simulationMaxTicks = 40;
-    const auto& actions = StrategyGenerator::getActions(simulationMaxTicks, 0, false, false);
-
-    if (unit.weapon && unit.weapon->fireTimer) {
-        for (int ticks = 0; ticks < *(unit.weapon->fireTimer) * 60.0; ++ticks) {
+        for (int ticks = 0; ticks < simulationMaxTicks; ++ticks) {
+            double distSqr = distanceSqr(enemyPosition, unit.position);
+            double bulletDist = speed * ticks / 60.0;
             params[enemyUnit.id] = actions[ticks];
             sim.simulate(params);
             enemyPosition = sim.units[enemyUnit.id].position;
+            if (distSqr < bulletDist * bulletDist) {
+                break;
+            }
         }
+    }
+    double xDiff = enemyPosition.x - unit.position.x;
+    double yDiff = enemyPosition.y - unit.position.y;
+
+    std::vector<double> enemyUnitAngles = {
+        atan2(yDiff + unit.size.y / 2, xDiff + unit.size.x / 2),
+        atan2(yDiff + unit.size.y / 2, xDiff - unit.size.x / 2),
+        atan2(yDiff - unit.size.y / 2, xDiff + unit.size.x / 2),
+        atan2(yDiff - unit.size.y / 2, xDiff - unit.size.x / 2)
+    };
+
+    double minEnemyAngle = enemyUnitAngles[0];
+    double maxEnemyAngle = enemyUnitAngles[0];
+
+    for (double angle : enemyUnitAngles) {
+        minEnemyAngle = minAngle(angle, minEnemyAngle);
+        maxEnemyAngle = maxAngle(angle, maxEnemyAngle);
     }
 
-    for (int ticks = 0; ticks < simulationMaxTicks; ++ticks) {
-        double distSqr = distanceSqr(enemyPosition, unit.position);
-        double bulletDist = speed * ticks / 60.0;
-        params[enemyUnit.id] = actions[ticks];
-        sim.simulate(params);
-        enemyPosition = sim.units[enemyUnit.id].position;
-        if (distSqr < bulletDist * bulletDist) {
-            break;
-        }
+    double minSpread = sumAngles(lastAngle, -unit.weapon->spread);
+    double maxSpread = sumAngles(lastAngle, unit.weapon->spread);
+
+
+    double hitProb;
+    if ((isLessAngle(minEnemyAngle, minSpread) && isGreaterAngle(maxEnemyAngle, maxSpread)) ||
+        (isLessAngle(minSpread, minEnemyAngle) && isGreaterAngle(maxSpread, maxEnemyAngle))) {
+        hitProb = 1.0;
+    } else if (isLessAngle(minEnemyAngle, minSpread) && isLessAngle(maxEnemyAngle, maxSpread)) {
+        hitProb = findAngle(minSpread, maxEnemyAngle) / findAngle(minSpread, maxSpread);
+        targetAngle = sumAngles(minEnemyAngle, findAngle(minEnemyAngle, maxSpread) / 2);
+    } else {
+        hitProb = findAngle(minEnemyAngle, maxSpread) / findAngle(minSpread, maxSpread);
+        targetAngle = sumAngles(maxEnemyAngle, -findAngle(minSpread, maxEnemyAngle) / 2);
     }
-    return Vec2Double(enemyPosition.x - unit.position.x,
-                      enemyPosition.y - unit.position.y);
+
+    if (isLessAngle(maxSpread, minEnemyAngle)) {
+        hitProb = 0.0;
+        targetAngle = sumAngles(minSpread, findAngle(minSpread, maxEnemyAngle) / 2);
+    } else if (isLessAngle(maxEnemyAngle, minSpread)) {
+        hitProb = 0.0;
+        targetAngle = sumAngles(minEnemyAngle, findAngle(minEnemyAngle, maxSpread) / 2);
+    }
+
+    bool dontMove = hitProb > 0.85;
+
+    aim = Vec2Double(enemyPosition.x - unit.position.x,
+                     enemyPosition.y - unit.position.y);
+    fastMoveAngle = !(unit.weapon->fireTimer && unit.weapon->fireTimer > 1. / 60);
+    if (findAngle(atan2(aim.y, aim.x), lastAngle) > unit.weapon->params.maxSpread * 1.2) {
+        targetAngle = atan2(aim.y, aim.x);
+        fastMoveAngle = true;
+    } else if (dontMove) {
+        return Vec2Double(cos(lastAngle), sin(lastAngle));
+    }
+
+//    double anglesAbs = fabs(targetAngle - lastAngle);
+//    double step = std::max(2.0, 57.2957 * anglesAbs / 10) * unit.weapon->params.recoil / 60;
+    double step = unit.weapon->params.recoil / 60;
+    double finalTargetAngle;
+    if (fastMoveAngle) {
+        finalTargetAngle = targetAngle;
+    } else if (isLessAngle(lastAngle, targetAngle)) {
+        finalTargetAngle = lastAngle + step;
+    } else {
+        finalTargetAngle = lastAngle - step;
+    }
+
+    return Vec2Double(cos(finalTargetAngle), sin(finalTargetAngle));
 }
 
 std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
@@ -171,7 +232,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
                                                    const UnitAction& targetAction,
                                                    Debug& debug) {
     std::cerr << "Current tick: " << game.currentTick << "\n";
-    int actionTicks = 30;
+    int actionTicks = 45;
     std::vector<std::vector<UnitAction>> actionSets = {
         StrategyGenerator::getActions(actionTicks, 1, true, false),
         StrategyGenerator::getActions(actionTicks, 0, true, false),
@@ -185,10 +246,10 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
     };
 
     std::vector<std::vector<UnitAction>> enemyActionSets = {
-        StrategyGenerator::getActions(actionTicks, 1, true, false),
-        StrategyGenerator::getActions(actionTicks, -1, true, false),
-        StrategyGenerator::getActions(actionTicks, 1, false, true),
-        StrategyGenerator::getActions(actionTicks, -1, false, true)
+        StrategyGenerator::getActions(actionTicks, 0, false, false)
+//        StrategyGenerator::getActions(actionTicks, -1, true, false),
+//        StrategyGenerator::getActions(actionTicks, 1, false, true),
+//        StrategyGenerator::getActions(actionTicks, -1, false, true)
     };
 
     std::optional<UnitAction> bestAction;
@@ -213,43 +274,45 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
     };
 
     int colorIndex = 0;
-    int bestEnemyActionIndex = 0;
-    std::shared_ptr<Simulation> bestEnemySim = nullptr;
-    for (auto& actionSet : enemyActionSets) {
-        Simulation sim(game, unit.playerId, debug, colors[colorIndex], true, true, true, 20);
-        for (int i = 0; i < actionTicks; ++i) {
-            auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
-            StrategyGenerator::updateAction(sim.units, unit.id, myAction);
-            StrategyGenerator::updateAction(sim.units, enemyUnitId, actionSet[i]);
-            params[unit.id] = myAction;
-            params[enemyUnitId] = actionSet[i];
-            sim.simulate(params);
-        }
-        std::cerr << "Consider action: " << actionSet[0].toString() << '\n';
-        for (const auto& event : sim.events) {
-            std::cerr << event.toString() << '\n';
-        }
-        if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet[0], enemyActionSets[bestEnemyActionIndex][0], game,
-                                                          unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
-            bestEnemySim = std::make_shared<Simulation>(sim);
-            bestEnemyActionIndex = colorIndex;
-        }
-        ++colorIndex;
-    }
-
-    std::cerr << "Best enemy action: " << enemyActionSets[bestEnemyActionIndex][0].toString() << '\n';
+//    int bestEnemyActionIndex = 0;
+//    std::shared_ptr<Simulation> bestEnemySim = nullptr;
+//    for (auto& actionSet : enemyActionSets) {
+//        Simulation sim(game, unit.playerId, debug, colors[colorIndex], true, true, true, 10);
+//        for (int i = 0; i < actionTicks; ++i) {
+//            auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
+//            updateAction(sim.units, unit.id, myAction, game, debug);
+//            updateAction(sim.units, enemyUnitId, actionSet[i], game, debug);
+//            params[unit.id] = myAction;
+//            params[enemyUnitId] = actionSet[i];
+//            sim.simulate(params);
+//        }
+//        std::cerr << "Consider action: " << actionSet[0].toString() << '\n';
+//        for (const auto& event : sim.events) {
+//            std::cerr << event.toString() << '\n';
+//        }
+//        if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet[0], enemyActionSets[bestEnemyActionIndex][0], game,
+//                                                          unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
+//            bestEnemySim = std::make_shared<Simulation>(sim);
+//            bestEnemyActionIndex = colorIndex;
+//        }
+//        ++colorIndex;
+//    }
+//
+//    std::cerr << "=========Best enemy action: " << enemyActionSets[bestEnemyActionIndex][0].toString() << '\n';
 
     colorIndex = 0;
     bool noEvents = true;
     std::shared_ptr<Simulation> bestSim = nullptr;
     for (auto& actionSet : actionSets) {
-        Simulation sim(game, unit.playerId, debug, colors[colorIndex], true, true, true, 20);
+        Simulation sim(game, unit.playerId, debug, colors[colorIndex], true, true, true, 10);
         for (int i = 0; i < actionTicks; ++i) {
-            StrategyGenerator::updateAction(sim.units, unit.id, actionSet[i]);
-            StrategyGenerator::updateAction(sim.units, enemyUnitId, enemyActionSets[bestEnemyActionIndex][i]);
+            updateAction(sim.units, unit.id, actionSet[i], game, debug);
+            updateAction(sim.units, enemyUnitId, enemyActionSets[0][i], game, debug);
             params[unit.id] = actionSet[i];
-            params[enemyUnitId] = enemyActionSets[bestEnemyActionIndex][i];
-            sim.simulate(params);
+            params[enemyUnitId] = enemyActionSets[0][i];
+            int microticks = i < 2 ? 100 : 20;
+//            int microticks = 10;
+            sim.simulate(params, microticks);
         }
 //        debug.draw(CustomData::Rect(
 //            Vec2Float(sim.units[unit.id].position.x - sim.units[unit.id].size.x / 2, sim.units[unit.id].position.y),
@@ -291,12 +354,12 @@ bool MyStrategy::shouldShoot(Unit unit, int enemyUnitId, Vec2Double aim, const G
     }
 
     double aimAngle = atan2(aim.y, aim.x);
-    int angleStepsRange = 0;
+    int angleStepsRange = 2;
     int angleStepsCount = 2 * angleStepsRange + 1;
 
     std::vector<Damage> damages;
     for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
-        Simulation sim(game, unit.playerId, debug, ColorFloat(0.0, 1.0, 1.0, 0.5), true, true, false, 5);
+        Simulation sim(game, unit.playerId, debug, ColorFloat(0.0, 1.0, 1.0, 0.5), true, true, false, 2);
 
         auto bulletPos = unit.position;
         bulletPos.y += unit.size.y / 2;
@@ -316,8 +379,8 @@ bool MyStrategy::shouldShoot(Unit unit, int enemyUnitId, Vec2Double aim, const G
         )};
         std::unordered_map<int, UnitAction> params;
         auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
-        for (int j = 0; j < 30; ++j) {
-            StrategyGenerator::updateAction(sim.units, enemyUnitId, myAction);
+        for (int j = 0; j < 40; ++j) {
+            updateAction(sim.units, enemyUnitId, myAction, game, debug);
             params[enemyUnitId] = myAction;
             sim.simulate(params);
             if (sim.bullets.empty()) {
@@ -425,7 +488,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 
     std::cerr << "best score: " << score2 << '\n';
 
-    if (!areSame(score1, score2, (targetImportance > 1.1) ? 3.5 : 0.5)) {
+    if (!areSame(score1, score2, (targetImportance > 1.1) ? 3.5 : 0.4)) {
         if (score1 > score2) {
             return 1;
         } else {
@@ -469,15 +532,6 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
     } else {
         return -1;
     }
-//    double targetDistance1 = distanceSqr(sim1.units.at(unitId).position, sim1.units.at(enemyId).position);
-//    double targetDistance2 = distanceSqr(sim2.units.at(unitId).position, sim2.units.at(enemyId).position);
-//    std::cerr << "target distance: " << targetDistance1 << '\n';
-//    std::cerr << "best target distance: " << targetDistance2 << '\n';
-//    if (targetDistance1 < targetDistance2) {
-//        return 1;
-//    } else {
-//        return -1;
-//    }
 }
 
 void MyStrategy::buildPathGraph(const Unit& unit, const Game& game, Debug& debug) {
@@ -508,6 +562,14 @@ void MyStrategy::pathDfs(int x, int y, const std::vector<UnitAction>& actions, c
         Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 1.0, 1.0, 0.3), true, false, false, 3);
         sim.units[unit.id].position.x = x + 0.5;
         sim.units[unit.id].position.y = y;
+        std::unordered_map<int, Unit> units;
+        for (const auto& [id, u] : sim.units) {
+            if (id == unit.id) {
+                units[id] = u;
+                break;
+            }
+        }
+        sim.units = units;
 
         std::unordered_map<int, UnitAction> params;
         Vec2Double prevSimPosition = sim.units[unit.id].position;
@@ -644,9 +706,9 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
                 } else {
                     --winHealthPackPathNum;
                 }
-                sum += myDistance;
+//                sum += paths[key][getPathsIndex(healthPacks[i].position)];
             }
-
+            sum = distanceSqr(fromPathsIndex(key), nearestEnemy->position);
             if (winHealthPackPathNum > bestWinHealthPackPathNum ||
                 (winHealthPackPathNum == bestWinHealthPackPathNum && sum < minHealthPackDistanceSum)) {
                 bestWinHealthPackPathNum = winHealthPackPathNum;
@@ -698,7 +760,7 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
     double minPathDistance = 1000.0;
 
     for (const auto& action : actions) {
-        Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 1.0, 1.0, 0.3), true, false, false, 3);
+        Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 1.0, 1.0, 0.3), true, false, false, 1);
 
         std::unordered_map<int, UnitAction> params;
         Vec2Double prevSimPosition = sim.units[unit.id].position;
@@ -726,5 +788,24 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
     }
 
     return minPathDistance;
+}
+
+void MyStrategy::updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action,
+                              const Game& game, Debug& debug) {
+    const Unit& unit = units[unitId];
+    const Unit* nearestEnemy = nullptr;
+    for (const auto& [id, other] : units) {
+        if (other.playerId != unit.playerId) {
+            if (nearestEnemy == nullptr ||
+                distanceSqr(unit.position, other.position) <
+                distanceSqr(unit.position, nearestEnemy->position)) {
+                nearestEnemy = &other;
+            }
+        }
+    }
+    action.aim = Vec2Double(0.0, 0.0);
+    if (nearestEnemy != nullptr) {
+        action.aim = predictShootAngle2(unit, *nearestEnemy, game, debug, false);
+    }
 }
 

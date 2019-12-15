@@ -20,7 +20,7 @@ public:
         int microTicks = 100
     );
 
-    void simulate(std::unordered_map<int, UnitAction> actions);
+    void simulate(std::unordered_map<int, UnitAction> actions, std::optional<int> microTicks = std::nullopt);
 
 private:
     void move(const UnitAction& action, int unitId);

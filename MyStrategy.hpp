@@ -15,6 +15,7 @@ public:
     UnitAction getAction(const Unit& unit, const Game& game, Debug& debug);
 
     Vec2Double predictShootAngle(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug);
+    Vec2Double predictShootAngle2(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug, bool simulateFallDown = true);
 
     std::optional<UnitAction> avoidBullets(
         const Unit& unit,
@@ -53,6 +54,8 @@ public:
     Vec2Double findTargetPosition(const Unit& unit, const Unit* nearestEnemy, const Game& game, Debug& debug, double& targetImportance);
 
     double calculatePathDistance(const Vec2Double& src, const Vec2Double& dst, const Unit& unit, const Game& game, Debug& debug);
+
+    void updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action, const Game& game, Debug& debug);
 
 private:
     std::shared_ptr<Simulation> simulation;
