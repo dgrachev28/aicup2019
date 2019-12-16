@@ -24,6 +24,13 @@ struct Rect {
         left = bullet.position.x - bullet.size / 2;
     }
 
+    Rect(const LootBox& lootBox) {
+        top = lootBox.position.y + lootBox.size.y;
+        right = lootBox.position.x + lootBox.size.x / 2;
+        bottom = lootBox.position.y;
+        left = lootBox.position.x - lootBox.size.x / 2;
+    }
+
     double left;
     double top;
     double right;

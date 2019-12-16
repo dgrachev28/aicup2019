@@ -8,7 +8,7 @@ MyStrategy::MyStrategy() {}
 
 
 UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debug) {
-    if (game.currentTick == 0) {
+    if (paths.empty()) {
         buildPathGraph(unit, game, debug);
         floydWarshall();
     }
@@ -64,7 +64,7 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
         Tile::WALL) {
         jump = true;
     }
-    if (targetPos.x - unit.position.x < 0.1 &&
+    if (targetPos.x - unit.position.x < -0.1 &&
         game.level.tiles[size_t(unit.position.x - 1)][size_t(unit.position.y)] ==
         Tile::WALL) {
         jump = true;
@@ -135,7 +135,7 @@ Vec2Double MyStrategy::predictShootAngle2(const Unit& unit, const Unit& enemyUni
     double targetAngle;
     bool fastMoveAngle;
     Vec2Double enemyPosition = enemyUnit.position;
-    if (!simulateFallDown || enemyUnit.jumpState.canCancel || !areSame(enemyUnit.jumpState.maxTime, 0.0)) {
+    if (!simulateFallDown || enemyUnit.jumpState.canCancel) {
         aim = Vec2Double(enemyPosition.x - unit.position.x,
                          enemyPosition.y - unit.position.y);
     } else {
@@ -206,6 +206,8 @@ Vec2Double MyStrategy::predictShootAngle2(const Unit& unit, const Unit& enemyUni
     if (findAngle(atan2(aim.y, aim.x), lastAngle) > unit.weapon->params.maxSpread * 1.2) {
         targetAngle = atan2(aim.y, aim.x);
         fastMoveAngle = true;
+    } else if (areSame(unit.weapon->spread, unit.weapon->params.minSpread)) {
+        targetAngle = atan2(aim.y, aim.x);
     } else if (dontMove) {
         return Vec2Double(cos(lastAngle), sin(lastAngle));
     }
@@ -310,7 +312,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             updateAction(sim.units, enemyUnitId, enemyActionSets[0][i], game, debug);
             params[unit.id] = actionSet[i];
             params[enemyUnitId] = enemyActionSets[0][i];
-            int microticks = i < 2 ? 100 : 20;
+            int microticks = i < 2 ? 100 : 10;
 //            int microticks = 10;
             sim.simulate(params, microticks);
         }
@@ -387,12 +389,12 @@ bool MyStrategy::shouldShoot(Unit unit, int enemyUnitId, Vec2Double aim, const G
                 break;
             }
         }
-        Damage damage{};
+        Damage damage{0.0, 0.0};
         for (const Unit& u : game.units) {
-            if (u.id == unit.id) {
-                damage.me = u.health - sim.units[u.id].health;
+            if (u.playerId == unit.playerId) {
+                damage.me += u.health - sim.units[u.id].health;
             } else {
-                damage.enemy = u.health - sim.units[u.id].health;
+                damage.enemy += u.health - sim.units[u.id].health;
             }
         }
         damages.push_back(damage);
@@ -415,7 +417,7 @@ bool MyStrategy::shouldShoot(Unit unit, int enemyUnitId, Vec2Double aim, const G
 //    if ((double(damageEnemyCount) / angleStepsCount) < 0.1) {
 //        return false;
 //    }
-    return damageMeCount / angleStepsCount < 0.05 || damageEnemyCount > 0;
+    return damageMeCount < 0.05 && damageEnemyCount > 0;
 }
 
 int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim2,
@@ -451,7 +453,10 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
             timeMultiplier *= 0.93;
         }
         double eventScore = event.damage * timeMultiplier;
-        if (!event.real) {
+
+        if (eventScore < 0 && event.unitId == unit.id) {
+            eventScore = -std::min(100 - unit.health, 50.0);
+        } else if (!event.real) {
             double prob = event.probability;
             for (int i = 0; i < event.shootTick; ++i) {
                 prob *= 0.93;
@@ -473,7 +478,10 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
             timeMultiplier *= 0.93;
         }
         double eventScore = event.damage * timeMultiplier;
-        if (!event.real) {
+
+        if (eventScore < 0 && event.unitId == unit.id) {
+            eventScore = -std::min(100 - unit.health, 50.0);
+        } else if (!event.real) {
             double prob = event.probability;
             for (int i = 0; i < event.shootTick; ++i) {
                 prob *= 0.93;
@@ -804,8 +812,10 @@ void MyStrategy::updateAction(std::unordered_map<int, Unit> units, int unitId, U
         }
     }
     action.aim = Vec2Double(0.0, 0.0);
+//    action.shoot = false;
     if (nearestEnemy != nullptr) {
         action.aim = predictShootAngle2(unit, *nearestEnemy, game, debug, false);
+//        action.shoot = shouldShoot(unit, nearestEnemy->id, action.aim, game, debug);
     }
 }
 

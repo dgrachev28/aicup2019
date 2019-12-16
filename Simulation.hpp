@@ -30,9 +30,11 @@ private:
 
     void simulateBullets();
 
+    void simulateHealthPack(int unitId);
+
     void explode(const Bullet& bullet, std::optional<int> unitId);
 
-    double calculateHitProbability(const Bullet& bullet, const Unit& targetUnit);
+    double calculateHitProbability(const Bullet& bullet, const Unit& targetUnit, bool explosion = false);
 
     void simulateShoot(const UnitAction& action, int unitId);
 
