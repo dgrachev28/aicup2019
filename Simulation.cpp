@@ -281,7 +281,7 @@ void Simulation::explode(const Bullet& bullet,
                     id,
                     double(bullet.explosionParams->damage),
                     bullet.real,
-                    calculateHitProbability(bullet, unit),
+                    calculateHitProbability(bullet, unit, true),
                     bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick
                 });
             }
@@ -305,8 +305,8 @@ double Simulation::calculateHitProbability(const Bullet& bullet, const Unit& tar
     double spreadAngle = 2 * bullet.virtualParams->spread;
 
     if (explosion) {
-        if (bullet.unitId != targetUnit.id) {
-            return 0.8;
+        if (bullet.unitId == targetUnit.id) {
+            return 0.5;
         }
         return 1.0;
     }

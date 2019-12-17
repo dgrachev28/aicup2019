@@ -38,16 +38,38 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
 //        }
     }
 
-    const Unit* nearestEnemy = nullptr;
+    std::vector<const Unit*> myUnits;
+    std::vector<const Unit*> enemyUnits;
     for (const Unit& other : game.units) {
-        if (other.playerId != unit.playerId) {
-            if (nearestEnemy == nullptr ||
-                distanceSqr(unit.position, other.position) <
-                distanceSqr(unit.position, nearestEnemy->position)) {
-                nearestEnemy = &other;
-            }
+        if (other.playerId == unit.playerId) {
+            myUnits.push_back(&other);
+        } else {
+            enemyUnits.push_back(&other);
         }
     }
+
+    const Unit* nearestEnemy = nullptr;
+    double minDistance = 10000000.0;
+    for (const Unit* enemy : enemyUnits) {
+        double distance = 0.0;
+        for (const Unit* my : myUnits) {
+            distance += distanceSqr(my->position, enemy->position);
+        }
+        if (distance < minDistance) {
+            minDistance = distance;
+            nearestEnemy = enemy;
+        }
+    }
+//
+//    for (const Unit& other : game.units) {
+//        if (other.playerId != unit.playerId) {
+//            if (nearestEnemy == nullptr ||
+//                distanceSqr(unit.position, other.position) <
+//                distanceSqr(unit.position, nearestEnemy->position)) {
+//                nearestEnemy = &other;
+//            }
+//        }
+//    }
 
     double targetImportance;
     const auto& targetPos = findTargetPosition(unit, nearestEnemy, game, debug, targetImportance);
@@ -247,18 +269,15 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
         StrategyGenerator::getActions(actionTicks, -1, false, true)
     };
 
-    std::vector<std::vector<UnitAction>> enemyActionSets = {
-        StrategyGenerator::getActions(actionTicks, 0, false, false)
-//        StrategyGenerator::getActions(actionTicks, -1, true, false),
-//        StrategyGenerator::getActions(actionTicks, 1, false, true),
-//        StrategyGenerator::getActions(actionTicks, -1, false, true)
-    };
 
     std::optional<UnitAction> bestAction;
-    int enemyUnitId = -1;
+
+    std::vector<UnitAction> enemyActionSets;
+    std::vector<int> enemyUnitIds;
     for (const Unit& u : game.units) {
         if (u.playerId != unit.playerId) {
-            enemyUnitId = u.id;
+            enemyUnitIds.push_back(u.id);
+            enemyActionSets.push_back(StrategyGenerator::getActions(1, 0, false, false)[0]);
         }
     }
 
@@ -309,9 +328,13 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
         Simulation sim(game, unit.playerId, debug, colors[colorIndex], true, true, true, 10);
         for (int i = 0; i < actionTicks; ++i) {
             updateAction(sim.units, unit.id, actionSet[i], game, debug);
-            updateAction(sim.units, enemyUnitId, enemyActionSets[0][i], game, debug);
             params[unit.id] = actionSet[i];
-            params[enemyUnitId] = enemyActionSets[0][i];
+
+            for (int j = 0; j < enemyUnitIds.size(); ++j) {
+                updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j], game, debug);
+                params[enemyUnitIds[j]] = enemyActionSets[j];
+            }
+
             int microticks = i < 2 ? 100 : 10;
 //            int microticks = 10;
             sim.simulate(params, microticks);
@@ -459,7 +482,11 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
         } else if (!event.real) {
             double prob = event.probability;
             for (int i = 0; i < event.shootTick; ++i) {
-                prob *= 0.93;
+                if (event.damage == 30 || event.damage == 50) {
+                    prob *= 0.85;
+                } else {
+                    prob *= 0.93;
+                }
             }
             eventScore *= std::min(prob, 1.0);
         }
@@ -801,21 +828,32 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
 void MyStrategy::updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action,
                               const Game& game, Debug& debug) {
     const Unit& unit = units[unitId];
+
+    std::vector<const Unit*> myUnits;
+    std::vector<const Unit*> enemyUnits;
+    for (const Unit& other : game.units) {
+        if (other.playerId == unit.playerId) {
+            myUnits.push_back(&other);
+        } else {
+            enemyUnits.push_back(&other);
+        }
+    }
+
     const Unit* nearestEnemy = nullptr;
-    for (const auto& [id, other] : units) {
-        if (other.playerId != unit.playerId) {
-            if (nearestEnemy == nullptr ||
-                distanceSqr(unit.position, other.position) <
-                distanceSqr(unit.position, nearestEnemy->position)) {
-                nearestEnemy = &other;
-            }
+    double minDistance = 10000000.0;
+    for (const Unit* enemy : enemyUnits) {
+        double distance = 0.0;
+        for (const Unit* my : myUnits) {
+            distance += distanceSqr(my->position, enemy->position);
+        }
+        if (distance < minDistance) {
+            minDistance = distance;
+            nearestEnemy = enemy;
         }
     }
     action.aim = Vec2Double(0.0, 0.0);
-//    action.shoot = false;
     if (nearestEnemy != nullptr) {
         action.aim = predictShootAngle2(unit, *nearestEnemy, game, debug, false);
-//        action.shoot = shouldShoot(unit, nearestEnemy->id, action.aim, game, debug);
     }
 }
 
