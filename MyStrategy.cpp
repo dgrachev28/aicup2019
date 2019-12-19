@@ -272,39 +272,50 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
 
     std::optional<UnitAction> bestAction;
 
-    std::vector<UnitAction> enemyActionSets;
+    std::vector<std::vector<UnitAction>> enemyActionSets;
     std::vector<int> enemyUnitIds;
     for (const Unit& u : game.units) {
         if (u.playerId != unit.playerId) {
             enemyUnitIds.push_back(u.id);
-            enemyActionSets.push_back(StrategyGenerator::getActions(1, 0, false, false)[0]);
+            std::vector<UnitAction> actions = {
+                StrategyGenerator::getActions(1, 1, true, false)[0],
+                StrategyGenerator::getActions(1, -1, true, false)[0],
+                StrategyGenerator::getActions(1, 1, false, true)[0],
+                StrategyGenerator::getActions(1, -1, false, true)[0]
+            };
+            enemyActionSets.push_back(actions);
         }
     }
 
     std::unordered_map<int, UnitAction> params;
-//    int bestEnemyActionIndex = 0;
-//    int colorIndex = 0;
-//    std::shared_ptr<Simulation> bestEnemySim = nullptr;
-//    for (auto& actionSet : enemyActionSets) {
-//        Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.3), true, true, true, 5);
-//        for (int i = 0; i < actionTicks; ++i) {
-//            auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
-//            updateAction(sim.units, unit.id, myAction, game, debug);
-//            updateAction(sim.units, enemyUnitIds[colorIndex], actionSet[i], game, debug);
-//            params[unit.id] = myAction;
-//            params[enemyUnitId] = actionSet[i];
-//            sim.simulate(params);
-//        }
-//        if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet[0], enemyActionSets[bestEnemyActionIndex][0], game,
-//                                                          unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
-//            bestEnemySim = std::make_shared<Simulation>(sim);
-//            bestEnemyActionIndex = colorIndex;
-//        }
-//        ++colorIndex;
-//    }
-//
-//    std::cerr << "=========Best enemy action: " << enemyActionSets[bestEnemyActionIndex][0].toString() << '\n';
 
+    std::vector<int> bestEnemyActionIndex = {0, 0};
+
+    for (int enemyIdx = 0; enemyIdx < enemyUnitIds.size(); ++enemyIdx) {
+        int colorIndex = 0;
+        std::shared_ptr<Simulation> bestEnemySim = nullptr;
+        for (auto& actionSet : enemyActionSets[enemyIdx]) {
+            Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.3), true, true, true, 5);
+            for (int i = 0; i < actionTicks; ++i) {
+                auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
+                updateAction(sim.units, unit.id, myAction, game, debug);
+                updateAction(sim.units, enemyUnitIds[colorIndex], actionSet, game, debug);
+                params[unit.id] = myAction;
+                params[enemyUnitIds[enemyIdx]] = actionSet;
+                sim.simulate(params);
+            }
+            if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet, enemyActionSets[enemyIdx][bestEnemyActionIndex[enemyIdx]], game,
+                                                              unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
+                bestEnemySim = std::make_shared<Simulation>(sim);
+                bestEnemyActionIndex[enemyIdx] = colorIndex;
+            }
+            ++colorIndex;
+        }
+
+        std::cerr << "=========Best enemy action: " << enemyActionSets[enemyIdx][bestEnemyActionIndex[enemyIdx]].toString() << '\n';
+    }
+
+    auto defaultAction = StrategyGenerator::getActions(1, 0, false, false)[0];
     bool noEvents = true;
     std::shared_ptr<Simulation> bestSim = nullptr;
     for (auto& actionSet : actionSets) {
@@ -314,13 +325,18 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             params[unit.id] = actionSet[i];
 
             for (int j = 0; j < enemyUnitIds.size(); ++j) {
-                updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j], sim.game, debug);
-                params[enemyUnitIds[j]] = enemyActionSets[j];
+                if (j < 4) {
+                    updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j][bestEnemyActionIndex[j]], sim.game, debug);
+                    params[enemyUnitIds[j]] = enemyActionSets[j][bestEnemyActionIndex[j]];
+                } else {
+                    updateAction(sim.units, enemyUnitIds[j], defaultAction, sim.game, debug);
+                    params[enemyUnitIds[j]] = defaultAction;
+                }
             }
 
             int microticks = i < 20 ? 5 : 1;
 //            int microticks = 10;
-            sim.simulate(params, microticks);
+            sim.simulate(params, i < 3 ? 50 : microticks);
         }
 //        debug.draw(CustomData::Rect(
 //            Vec2Float(sim.units[unit.id].position.x - sim.units[unit.id].size.x / 2, sim.units[unit.id].position.y),
@@ -373,12 +389,17 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             params[unit.id] = actionSet[i];
 
             for (int j = 0; j < enemyUnitIds.size(); ++j) {
-                updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j], sim.game, debug);
-                params[enemyUnitIds[j]] = enemyActionSets[j];
+                if (j < 4) {
+                    updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j][bestEnemyActionIndex[j]], sim.game, debug);
+                    params[enemyUnitIds[j]] = enemyActionSets[j][bestEnemyActionIndex[j]];
+                } else {
+                    updateAction(sim.units, enemyUnitIds[j], defaultAction, sim.game, debug);
+                    params[enemyUnitIds[j]] = defaultAction;
+                }
             }
             int microticks = i < 20 ? 5 : 1;
 //            int microticks = 5;
-            sim.simulate(params, i == 0 ? 50 : microticks);
+            sim.simulate(params, i < 3 ? 50 : microticks);
         }
 //        debug.draw(CustomData::Rect(
 //            Vec2Float(sim.units[unit.id].position.x - sim.units[unit.id].size.x / 2, sim.units[unit.id].position.y),
@@ -533,6 +554,8 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
         }
         if (event.unitId == unitId) {
             eventScore = -eventScore;
+        } else if (sim1.units.at(event.unitId).playerId == unit.playerId) {
+            eventScore = 0;
         }
         score1 += eventScore;
     }
@@ -562,6 +585,8 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
         }
         if (event.unitId == unitId) {
             eventScore = -eventScore;
+        } else if (sim2.units.at(event.unitId).playerId == unit.playerId) {
+            eventScore = 0;
         }
         score2 += eventScore;
     }
