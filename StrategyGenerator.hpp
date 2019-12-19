@@ -7,10 +7,22 @@
 #include "model/UnitAction.hpp"
 #include "model/Unit.hpp"
 
+struct ActionChain {
+    int actionsCount;
+    double move;
+    bool jump;
+    bool jumpDown;
+};
+
 class StrategyGenerator {
 public:
     static std::vector<UnitAction> getActions(int actionsCount, double move, bool jump, bool jumpDown);
-    static void updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action);
+
+    static std::vector<UnitAction> getActions(int actionsCount, double move, bool jump, bool jumpDown,
+                                              std::vector<UnitAction> tailActions);
+
+    static std::vector<UnitAction> getActions(ActionChain actionChain);
+    static std::vector<UnitAction> getActions(std::vector<ActionChain> actionChains);
 };
 
 

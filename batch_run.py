@@ -8,6 +8,7 @@ import time
 import logging
 import traceback
 import multiprocessing
+from multiprocessing import Queue
 
 
 logging.basicConfig(
@@ -15,7 +16,6 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
 log = logging.getLogger()
-
 
 @click.group()
 def main():
@@ -35,7 +35,7 @@ def get_player_config(port):
 
 
 def worker(args):
-    idx, p1, p2, lr_bin, start_seed, level, nthreads, count = args
+    idx, p1, p2, lr_bin, start_seed, level, nthreads, count, queue = args
     port1 = 32003 + idx * 2
     port2 = port1 + 1
     seed = start_seed + idx
@@ -141,7 +141,7 @@ def worker(args):
         "options_preset": {
             "Custom": {
                 "level": level_config,
-                "properties": properties,
+                "properties": None,
             }
         },
         "players": [
@@ -169,10 +169,15 @@ def worker(args):
                 result = json.load(result_inp)
                 log.info("game with seed=%d results: %d - %d", seed, result["results"][swap], result["results"][1 - swap])
                 #print(" - ".join([("CRASHERD " if result["players"][i]["crashed"] else "") + str(result["results"][i]) for i in range(2)]))
+
+                queue.put((result["results"][swap], result["results"][1 - swap]))
+
     except Exception:
         log.error(traceback.format_exc())
     finally:
         pass
+
+
 
 
 def start_process():
@@ -188,15 +193,31 @@ def start_process():
 @click.option('--nthreads', type=int, default=4)
 @click.option('--count', type=int, default=12)
 def run(p1, p2, lr_bin, start_seed, level, nthreads, count):
+    m = multiprocessing.Manager()
+    queue = m.Queue()
     if not os.path.exists("tmp"):
         os.makedirs("tmp")
 
     pool = multiprocessing.Pool(processes=nthreads, initializer=start_process)
     pool.map(worker, [(
         i,
-        p1, p2, lr_bin, start_seed, level, nthreads, count
+        p1, p2, lr_bin, start_seed, level, nthreads, count, queue
     ) for i in range(count)])
 
+
+    p1_win = 0
+    p2_win = 0
+    draws = 0
+    while not queue.empty():
+        p1_result, p2_result = queue.get()
+        if p1_result > p2_result:
+            p1_win += 1
+        elif p1_result < p2_result:
+            p2_win += 1
+        else:
+            draws += 1
+
+    log.info(f"p1_win: {p1_win}, p2_win: {p2_win}, draws: {draws}")
 
 if __name__ == "__main__":
     main()

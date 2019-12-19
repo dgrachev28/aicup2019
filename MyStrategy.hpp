@@ -55,6 +55,9 @@ public:
 
     double calculatePathDistance(const Vec2Double& src, const Vec2Double& dst, const Unit& unit, const Game& game, Debug& debug);
 
+    double makeShortestPathStep(const Vec2Double& src, const Vec2Double& dst,
+                                const Unit& unit, const Game& game, Debug& debug);
+
     void updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action, const Game& game, Debug& debug);
 
 private:

@@ -91,9 +91,9 @@ void Simulation::moveX(const UnitAction& action, int unitId) {
         unit.position.x += moveDistance;
     } else if (!unitsCollision) {
         if (moveDistance < 0) {
-            unit.position.x = int(unit.position.x) + unit.size.x / 2;
+            unit.position.x = int(unit.position.x) + unit.size.x / 2 + 1e-9;
         } else {
-            unit.position.x = int(unit.position.x + 1) - unit.size.x / 2;
+            unit.position.x = int(unit.position.x + 1) - unit.size.x / 2 - 1e-9;
         }
     }
 }
@@ -163,6 +163,7 @@ void Simulation::fallDown(const UnitAction& action, int unitId) {
         || checkUnitsCollision(unitRect, unitId, units)) {
         unit.jumpState = JumpState(true, game.properties.unitJumpSpeed, game.properties.unitJumpTime, true);
     } else {
+        unit.jumpState = JumpState(false, 0.0, 0.0, false);
         unit.position.y -= moveDistance;
     }
 }
@@ -171,7 +172,6 @@ void Simulation::simulateBullets() {
     std::vector<Bullet> updatedBullets = {};
     std::vector<Bullet> explodedUnitsBullets;
     for (Bullet bullet : bullets) {
-        // TODO: should I check unit collision here before bullet movement?
         bool dontPush = false;
         for (auto& explodedBullet : explodedUnitsBullets) {
             if (!bullet.real && bullet.virtualParams->shootTick == explodedBullet.virtualParams->shootTick &&
@@ -192,8 +192,13 @@ void Simulation::simulateBullets() {
             continue;
         }
         bool exploded = false;
-        for (const auto& [unitId, unit]: units) {
-            if (intersectRects(bulletRect, Rect(unit)) && bullet.unitId != unitId) {
+        for (const auto&[unitId, unit]: units) {
+            bool virtualExplode = !bullet.real &&
+                                  units[bullet.unitId].playerId != unit.playerId &&
+                                  distanceSqr(bullet.virtualParams->shootPosition, unit.position) <
+                                  distanceSqr(bullet.virtualParams->shootPosition, bullet.position);
+
+            if ((virtualExplode || intersectRects(bulletRect, Rect(unit))) && bullet.unitId != unitId) {
                 explode(bullet, unitId);
                 if (!bullet.real) {
                     explodedUnitsBullets.push_back(bullet);
@@ -310,7 +315,7 @@ double Simulation::calculateHitProbability(const Bullet& bullet, const Unit& tar
         }
         return 1.0;
     }
-    return std::min(1.2, deltaAngle / spreadAngle);
+    return std::min(1.0, deltaAngle / spreadAngle);
 }
 
 void Simulation::simulateShoot(const UnitAction& action, int unitId) {
@@ -359,7 +364,7 @@ void Simulation::simulateShoot(const UnitAction& action, int unitId) {
 void Simulation::createBullets(const UnitAction& action, int unitId, const Rect& targetUnit) {
     Unit& unit = units[unitId];
     double aimAngle = atan2(action.aim.y, action.aim.x);
-    int angleStepsRange = 1;
+    int angleStepsRange = 0;
     int angleStepsCount = 2 * angleStepsRange + 1;
 
     for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
