@@ -325,7 +325,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             params[unit.id] = actionSet[i];
 
             for (int j = 0; j < enemyUnitIds.size(); ++j) {
-                if (j < 4) {
+                if (i < 3) {
                     updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j][bestEnemyActionIndex[j]], sim.game, debug);
                     params[enemyUnitIds[j]] = enemyActionSets[j][bestEnemyActionIndex[j]];
                 } else {
@@ -389,7 +389,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             params[unit.id] = actionSet[i];
 
             for (int j = 0; j < enemyUnitIds.size(); ++j) {
-                if (j < 4) {
+                if (i < 3) {
                     updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j][bestEnemyActionIndex[j]], sim.game, debug);
                     params[enemyUnitIds[j]] = enemyActionSets[j][bestEnemyActionIndex[j]];
                 } else {
@@ -412,7 +412,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             std::cerr << event.toString() << '\n';
         }
         if (bestSim == nullptr || compareSimulations(sim, *bestSim, actionSet[0], *bestAction, game,
-                                                     unit, actionTicks, targetPos, targetImportance, targetAction) > 0) {
+                                                     unit, actionTicks, targetPos, 0.3, tailChainActions[0]) > 0) {
             bestSim = std::make_shared<Simulation>(sim);
             bestAction = actionSet[0];
         }
@@ -593,7 +593,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 
     std::cerr << "best score: " << score2 << '\n';
 
-    if (!areSame(score1, score2, (targetImportance > 1.1) ? 3.5 : 0.4)) {
+    if (!areSame(score1, score2, targetImportance)) {
         if (score1 > score2) {
             return 1;
         } else {
@@ -764,10 +764,10 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
     }
 
     Vec2Double targetPos = unit.position;
-    targetImportance = 1.0;
+    targetImportance = 0.4;
     if ((!unit.weapon || unit.weapon->typ == ROCKET_LAUNCHER) && nearestWeapon != nullptr) {
         targetPos = nearestWeapon->position;
-        targetImportance = 10.0;
+        targetImportance = 3.5;
     } else if (!healthPacks.empty() && unit.health <= 90.0) {
         LootBox* bestHealthPack = nullptr;
         double minDistance = 10000.0;
@@ -794,7 +794,7 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
         std::cerr << "min distance diff: " << minDistance << '\n';
 
         targetPos = bestHealthPack->position;
-        targetImportance = 10.0;
+        targetImportance = 3.5;
     } else if (!healthPacks.empty()) {
 
         int bestTileIndex = 0;
