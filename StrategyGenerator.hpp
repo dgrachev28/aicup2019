@@ -16,7 +16,7 @@ struct ActionChain {
 
 class StrategyGenerator {
 public:
-    static std::vector<UnitAction> getActions(int actionsCount, double move, bool jump, bool jumpDown);
+    static std::vector<UnitAction> getActions(int actionsCount, double move, bool jump, bool jumpDown, bool shoot = true);
 
     static std::vector<UnitAction> getActions(int actionsCount, double move, bool jump, bool jumpDown,
                                               std::vector<UnitAction> tailActions);

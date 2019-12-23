@@ -14,7 +14,6 @@ public:
 
     UnitAction getAction(const Unit& unit, const Game& game, Debug& debug);
 
-    Vec2Double predictShootAngle(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug);
     Vec2Double predictShootAngle2(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug, bool simulateFallDown = true);
 
     std::optional<UnitAction> avoidBullets(
@@ -26,7 +25,22 @@ public:
         Debug& debug
     );
 
-    bool shouldShoot(Unit unit, int enemyUnitId, Vec2Double aim, const Game& game, Debug& debug);
+    bool shouldShoot(Unit unit, const Unit& enemyUnit, Vec2Double aim, const Game& game, Debug& debug);
+
+    std::unordered_map<int, double> calculateHitProbability(
+        const Unit& unit,
+        const Unit& enemyUnit,
+        const Game& game,
+        Debug& debug
+    );
+
+    void addRealBulletHits(
+        const std::vector<std::vector<DamageEvent>>& events,
+        int bulletDamage,
+        std::vector<std::unordered_map<int, std::vector<bool>>>& bulletHits
+    );
+
+    std::unordered_map<int, double> calculateHitProbability(const std::vector<std::unordered_map<int, std::vector<bool>>>& bulletHits);
 
     int compareSimulations(
         const Simulation& sim1,

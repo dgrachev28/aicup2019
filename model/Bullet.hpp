@@ -18,6 +18,7 @@ struct VirtualBulletParams {
     int shootTick;
     Vec2Double shootPosition;
     double spread;
+    int angleIndex;
 };
 
 class Bullet {

@@ -17,7 +17,8 @@ public:
         bool simMove = true,
         bool simBullets = true,
         bool simShoot = true,
-        int microTicks = 100
+        int microTicks = 100,
+        bool calcHitProbability = false
     );
 
     void simulate(std::unordered_map<int, UnitAction> actions, std::optional<int> microTicks = std::nullopt);
@@ -47,14 +48,17 @@ public:
     ColorFloat color;
     std::vector<Bullet> bullets;
     std::unordered_map<int, Unit> units;
+    std::unordered_map<int, std::vector<bool>> bulletHits;
 private:
     int startTick;
     int microTicks;
     double ticksMultiplier;
+    int shootBulletsCount;
 
     bool simMove;
     bool simBullets;
     bool simShoot;
+    bool calcHitProbability;
     int myPlayerId;
 };
 

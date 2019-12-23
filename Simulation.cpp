@@ -11,7 +11,8 @@ Simulation::Simulation(Game game,
                        bool simMove,
                        bool simBullets,
                        bool simShoot,
-                       int microTicks)
+                       int microTicks,
+                       bool calcHitProbability)
     : game(std::move(game))
     , myPlayerId(myPlayerId)
     , debug(debug)
@@ -20,12 +21,17 @@ Simulation::Simulation(Game game,
     , microTicks(microTicks)
     , simMove(simMove)
     , simBullets(simBullets)
-    , simShoot(simShoot) {
+    , simShoot(simShoot)
+    , calcHitProbability(calcHitProbability) {
 
     bullets = this->game.bullets;
     startTick = this->game.currentTick;
+    shootBulletsCount = calcHitProbability ? 12 : 0;
     for (const Unit& u : this->game.units) {
         units[u.id] = u;
+        if (calcHitProbability) {
+            bulletHits[u.id] = std::vector<bool>(2 * shootBulletsCount + 1, false);
+        }
     }
     ticksMultiplier = 1.0 / (game.properties.ticksPerSecond  * microTicks);
 }
@@ -193,14 +199,14 @@ void Simulation::simulateBullets() {
         }
         bool exploded = false;
         for (const auto&[unitId, unit]: units) {
-            bool virtualExplode = !bullet.real &&
+            bool virtualExplode = !bullet.real && !calcHitProbability &&
                                   units[bullet.unitId].playerId != unit.playerId &&
-                                  distanceSqr(bullet.virtualParams->shootPosition, unit.position) <
+                                  distanceSqr(bullet.virtualParams->shootPosition, Vec2Double(unit.position.x, unit.position.y + unit.size.y / 2)) <
                                   distanceSqr(bullet.virtualParams->shootPosition, bullet.position);
 
             if ((virtualExplode || intersectRects(bulletRect, Rect(unit))) && bullet.unitId != unitId) {
                 explode(bullet, unitId);
-                if (!bullet.real) {
+                if (!bullet.real && !calcHitProbability) {
                     explodedUnitsBullets.push_back(bullet);
                 }
                 exploded = true;
@@ -259,16 +265,19 @@ void Simulation::explode(const Bullet& bullet,
         if (!bullet.real && bullet.playerId == units[*unitId].playerId) {
             return;
         }
-
-        units[*unitId].health -= bullet.damage;
-        events.push_back(DamageEvent{
-            game.currentTick - startTick,
-            *unitId,
-            bullet.damage,
-            bullet.real,
-            calculateHitProbability(bullet, units[*unitId]),
-            bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick
-        });
+        if (calcHitProbability && !bullet.real) {
+            bulletHits[*unitId][bullet.virtualParams->angleIndex] = true;
+        } else {
+            units[*unitId].health -= bullet.damage;
+            events.push_back(DamageEvent{
+                game.currentTick - startTick,
+                *unitId,
+                bullet.damage,
+                bullet.real,
+                calculateHitProbability(bullet, units[*unitId]),
+                bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick
+            });
+        }
     }
     if (bullet.explosionParams) {
         Rect explosion(
@@ -280,15 +289,19 @@ void Simulation::explode(const Bullet& bullet,
 
         for (const auto& [id, unit]: units) {
             if (intersectRects(explosion, Rect(unit))) {
-                units[id].health -= bullet.explosionParams->damage;
-                events.push_back(DamageEvent{
-                    game.currentTick - startTick,
-                    id,
-                    double(bullet.explosionParams->damage),
-                    bullet.real,
-                    calculateHitProbability(bullet, unit, true),
-                    bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick
-                });
+                if (calcHitProbability && !bullet.real) {
+                    bulletHits[*unitId][bullet.virtualParams->angleIndex] = true;
+                } else {
+                    units[id].health -= bullet.explosionParams->damage;
+                    events.push_back(DamageEvent{
+                        game.currentTick - startTick,
+                        id,
+                        double(bullet.explosionParams->damage),
+                        bullet.real,
+                        calculateHitProbability(bullet, unit, true),
+                        bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick
+                    });
+                }
             }
         }
     }
@@ -330,6 +343,7 @@ void Simulation::simulateShoot(const UnitAction& action, int unitId) {
     } else {
         int enemyUnitId;
         for (const auto& [id, other] : units) {
+            // TODO: THIS IS NOT CORRECT
             if (other.playerId != unit.playerId) {
                 enemyUnitId = other.id;
             }
@@ -364,13 +378,12 @@ void Simulation::simulateShoot(const UnitAction& action, int unitId) {
 void Simulation::createBullets(const UnitAction& action, int unitId, const Rect& targetUnit) {
     Unit& unit = units[unitId];
     double aimAngle = atan2(action.aim.y, action.aim.x);
-    int angleStepsRange = 0;
-    int angleStepsCount = 2 * angleStepsRange + 1;
+    int angleStepsCount = 2 * shootBulletsCount + 1;
 
-    for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
+    for (int i = -shootBulletsCount; i <= shootBulletsCount; ++i) {
         auto bulletPos = unit.position;
         bulletPos.y += unit.size.y / 2;
-        double angle = aimAngle + unit.weapon->spread * i * 0.667 / (angleStepsRange == 0 ? 1 : angleStepsRange);
+        double angle = aimAngle + unit.weapon->spread * i / (shootBulletsCount == 0 ? 1 : shootBulletsCount);
         auto bulletVel = Vec2Double(cos(angle) * unit.weapon->params.bullet.speed,
                                     sin(angle) * unit.weapon->params.bullet.speed);
 
@@ -387,7 +400,8 @@ void Simulation::createBullets(const UnitAction& action, int unitId, const Rect&
             VirtualBulletParams{
                 game.currentTick,
                 bulletPos,
-                unit.weapon->spread
+                unit.weapon->spread,
+                i + shootBulletsCount
             }
         );
         if (unit.weapon->params.explosion) {

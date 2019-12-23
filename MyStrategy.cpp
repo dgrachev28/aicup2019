@@ -134,7 +134,7 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
 //    prevAction = action;
 
     if (nearestEnemy != nullptr) {
-        action.shoot = shouldShoot(unit, nearestEnemy->id, aim, game, debug);
+        action.shoot = shouldShoot(unit, *nearestEnemy, aim, game, debug);
     }
 
     auto bestAction = avoidBullets(unit, game, targetPos, targetImportance, action, debug);
@@ -335,8 +335,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             }
 
             int microticks = i < 20 ? 5 : 1;
-//            int microticks = 10;
-            sim.simulate(params, i < 3 ? 50 : microticks);
+            sim.simulate(params, i == 0 ? 50 : microticks);
         }
 //        debug.draw(CustomData::Rect(
 //            Vec2Float(sim.units[unit.id].position.x - sim.units[unit.id].size.x / 2, sim.units[unit.id].position.y),
@@ -398,14 +397,8 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
                 }
             }
             int microticks = i < 20 ? 5 : 1;
-//            int microticks = 5;
-            sim.simulate(params, i < 3 ? 50 : microticks);
+            sim.simulate(params, i == 0 ? 50 : microticks);
         }
-//        debug.draw(CustomData::Rect(
-//            Vec2Float(sim.units[unit.id].position.x - sim.units[unit.id].size.x / 2, sim.units[unit.id].position.y),
-//            Vec2Float(sim.units[unit.id].size.x, sim.units[unit.id].size.y),
-//            colors[colorIndex]
-//        ));
 
         std::cerr << "Consider action (chained): " << actionSet[0].toString() << '\n';
         for (const auto& event : sim.events) {
@@ -432,7 +425,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
     return bestAction;
 }
 
-bool MyStrategy::shouldShoot(Unit unit, int enemyUnitId, Vec2Double aim, const Game& game, Debug& debug) {
+bool MyStrategy::shouldShoot(Unit unit, const Unit& enemyUnit, Vec2Double aim, const Game& game, Debug& debug) {
     if (!unit.weapon) {
         return false;
     }
@@ -440,69 +433,87 @@ bool MyStrategy::shouldShoot(Unit unit, int enemyUnitId, Vec2Double aim, const G
         return false;
     }
 
-    double aimAngle = atan2(aim.y, aim.x);
-    int angleStepsRange = 2;
-    int angleStepsCount = 2 * angleStepsRange + 1;
-
-    std::vector<Damage> damages;
-    for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
-        Simulation sim(game, unit.playerId, debug, ColorFloat(0.0, 1.0, 1.0, 0.5), true, true, false, 1);
-
-        auto bulletPos = unit.position;
-        bulletPos.y += unit.size.y / 2;
-
-        double angle = aimAngle + unit.weapon->spread * i / 10;
-        auto bulletVel = Vec2Double(cos(angle) * unit.weapon->params.bullet.speed,
-                                    sin(angle) * unit.weapon->params.bullet.speed);
-        sim.bullets = {Bullet(
-            unit.weapon->typ,
-            unit.id,
-            unit.playerId,
-            bulletPos,
-            bulletVel,
-            unit.weapon->params.bullet.damage,
-            unit.weapon->params.bullet.size,
-            unit.weapon->params.explosion
-        )};
-        std::unordered_map<int, UnitAction> params;
-        auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
-        for (int j = 0; j < 40; ++j) {
-            updateAction(sim.units, enemyUnitId, myAction, game, debug);
-            params[enemyUnitId] = myAction;
-            sim.simulate(params);
-            if (sim.bullets.empty()) {
-                break;
+    auto hitProbabilities = calculateHitProbability(unit, enemyUnit, game, debug);
+    for (const Unit& u : game.units) {
+        std::cerr << "unit id: " << u.id << ", hit probability: " << hitProbabilities[u.id] << '\n';
+        if (u.playerId == unit.playerId) {
+            if (hitProbabilities[u.id] > 0.09) {
+                return false;
+            }
+        } else {
+            if (unit.weapon->typ == ASSAULT_RIFLE && hitProbabilities[u.id] > 0.0) {
+                return true;
+            }
+            if (unit.weapon->typ != ASSAULT_RIFLE && hitProbabilities[u.id] > 0.09) {
+                return true;
             }
         }
-        Damage damage{0.0, 0.0};
-        for (const Unit& u : game.units) {
-            if (u.playerId == unit.playerId) {
-                damage.me += u.health - sim.units[u.id].health;
-            } else {
-                damage.enemy += u.health - sim.units[u.id].health;
-            }
-        }
-        damages.push_back(damage);
     }
-    double damageMeCount = 0;
-    double damageEnemyCount = 0;
-    for (const Damage& dmg : damages) {
-        if (dmg.me > 0) {
-            ++damageMeCount;
-        }
-        if (dmg.enemy > 0) {
-            ++damageEnemyCount;
-        }
-    }
-    std::cerr << "damageMeCount: " << damageMeCount << ", P: " << std::to_string(damageMeCount / angleStepsCount) << '\n';
-    std::cerr << "damageEnemyCount: " << damageEnemyCount << ", P: " << std::to_string(damageEnemyCount / angleStepsCount) << '\n';
-    if (damageEnemyCount == 0) {
-        return false;
-    }
-//    if ((double(damageEnemyCount) / angleStepsCount) < 0.1) {
+    return false;
+
+//    double aimAngle = atan2(aim.y, aim.x);
+//    int angleStepsRange = 2;
+//    int angleStepsCount = 2 * angleStepsRange + 1;
+//
+//    std::vector<Damage> damages;
+//    for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
+//        Simulation sim(game, unit.playerId, debug, ColorFloat(0.0, 1.0, 1.0, 0.5), true, true, false, 1);
+//
+//        auto bulletPos = unit.position;
+//        bulletPos.y += unit.size.y / 2;
+//
+//        double angle = aimAngle + unit.weapon->spread * i / 10;
+//        auto bulletVel = Vec2Double(cos(angle) * unit.weapon->params.bullet.speed,
+//                                    sin(angle) * unit.weapon->params.bullet.speed);
+//        sim.bullets = {Bullet(
+//            unit.weapon->typ,
+//            unit.id,
+//            unit.playerId,
+//            bulletPos,
+//            bulletVel,
+//            unit.weapon->params.bullet.damage,
+//            unit.weapon->params.bullet.size,
+//            unit.weapon->params.explosion
+//        )};
+//        std::unordered_map<int, UnitAction> params;
+//        auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
+//        for (int j = 0; j < 40; ++j) {
+//            updateAction(sim.units, enemyUnit.id, myAction, game, debug);
+//            params[enemyUnit.id] = myAction;
+//            sim.simulate(params);
+//            if (sim.bullets.empty()) {
+//                break;
+//            }
+//        }
+//        Damage damage{0.0, 0.0};
+//        for (const Unit& u : game.units) {
+//            if (u.playerId == unit.playerId) {
+//                damage.me += u.health - sim.units[u.id].health;
+//            } else {
+//                damage.enemy += u.health - sim.units[u.id].health;
+//            }
+//        }
+//        damages.push_back(damage);
+//    }
+//    double damageMeCount = 0;
+//    double damageEnemyCount = 0;
+//    for (const Damage& dmg : damages) {
+//        if (dmg.me > 0) {
+//            ++damageMeCount;
+//        }
+//        if (dmg.enemy > 0) {
+//            ++damageEnemyCount;
+//        }
+//    }
+//    std::cerr << "damageMeCount: " << damageMeCount << ", P: " << std::to_string(damageMeCount / angleStepsCount) << '\n';
+//    std::cerr << "damageEnemyCount: " << damageEnemyCount << ", P: " << std::to_string(damageEnemyCount / angleStepsCount) << '\n';
+//    if (damageEnemyCount == 0) {
 //        return false;
 //    }
-    return damageMeCount < 0.05 && damageEnemyCount > 0;
+////    if ((double(damageEnemyCount) / angleStepsCount) < 0.1) {
+////        return false;
+////    }
+//    return damageMeCount < 0.05 && damageEnemyCount > 0;
 }
 
 int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim2,
@@ -988,5 +999,118 @@ void MyStrategy::updateAction(std::unordered_map<int, Unit> units, int unitId, U
     if (nearestEnemy != nullptr) {
         action.aim = predictShootAngle2(unit, *nearestEnemy, game, debug, false);
     }
+}
+
+std::unordered_map<int, double> MyStrategy::calculateHitProbability(
+    const Unit& unit,
+    const Unit& enemyUnit,
+    const Game& game,
+    Debug& debug
+) {
+    int actionTicks = 25;
+    std::vector<std::vector<UnitAction>> enemyActionSets = {
+        StrategyGenerator::getActions(actionTicks, 1, true, false, false),
+        StrategyGenerator::getActions(actionTicks, -1, true, false, false),
+        StrategyGenerator::getActions(actionTicks, 1, false, true, false),
+        StrategyGenerator::getActions(actionTicks, -1, false, true, false)
+    };
+
+    const auto& tailActions = StrategyGenerator::getActions(actionTicks - 2, 0, false, false, false);
+    auto myActions = StrategyGenerator::getActions(2, 0, false, false, tailActions);
+
+    std::vector<std::unordered_map<int, std::vector<bool>>> bulletHits;
+    std::vector<std::vector<DamageEvent>> events;
+    for (auto& enemyActionSet : enemyActionSets) {
+        Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.3), true, true, true, 1, true);
+//        sim.bullets = std::vector<Bullet>();
+
+        std::unordered_map<int, UnitAction> params;
+        for (int i = 0; i < actionTicks; ++i) {
+            if (myActions[i].shoot) {
+                updateAction(sim.units, unit.id, myActions[i], sim.game, debug);
+            }
+            params[unit.id] = myActions[i];
+            if (i == 0) {
+                params[enemyUnit.id] = StrategyGenerator::getActions(1, 0, false, false, false)[0];
+            } else {
+                params[enemyUnit.id] = enemyActionSet[i];
+            }
+            sim.simulate(params, i == 0 ? 10 : 1);
+            if (sim.bullets.empty()) {
+                break;
+            }
+        }
+
+        bulletHits.push_back(sim.bulletHits);
+        events.push_back(sim.events);
+    }
+
+    addRealBulletHits(events, unit.weapon->params.bullet.damage, bulletHits);
+    return calculateHitProbability(bulletHits);
+}
+
+
+void MyStrategy::addRealBulletHits(const std::vector<std::vector<DamageEvent>>& events,
+                                   int bulletDamage,
+                                   std::vector<std::unordered_map<int, std::vector<bool>>>& bulletHits) {
+    std::unordered_map<int, double> minUnitDamage;
+    std::vector<std::unordered_map<int, double>> unitDamage;
+    for (const auto& simEvents : events) {
+        std::unordered_map<int, double> damage;
+        for (const DamageEvent& event : simEvents) {
+            if (damage.find(event.unitId) == damage.end()) {
+                damage[event.unitId] = event.damage;
+            } else {
+                damage[event.unitId] += event.damage;
+            }
+        }
+
+        if (minUnitDamage.empty()) {
+            minUnitDamage = damage;
+        } else {
+            for (const auto&[unitId, dmg] : damage) {
+                if (dmg < minUnitDamage[unitId]) {
+                    minUnitDamage[unitId] = dmg;
+                }
+            }
+        }
+        unitDamage.push_back(damage);
+    }
+
+    for (int i = 0; i < unitDamage.size(); ++i) {
+        for (const auto&[unitId, dmg] : unitDamage[i]) {
+            if (dmg - minUnitDamage[unitId] >= bulletDamage) {
+                std::fill(bulletHits[i][unitId].begin(), bulletHits[i][unitId].end(), true);
+            }
+        }
+    }
+}
+
+std::unordered_map<int, double> MyStrategy::calculateHitProbability(
+    const std::vector<std::unordered_map<int, std::vector<bool>>>& bulletHits
+) {
+    std::unordered_map<int, std::vector<bool>> hitsIntersection = bulletHits[0];
+    int hitsSize = 0;
+
+    for (int i = 1; i < bulletHits.size(); ++i) {
+        for (const auto&[unitId, hits] : bulletHits[i]) {
+            hitsSize = hits.size();
+            for (int j = 0; j < hitsSize; ++j) {
+                hitsIntersection[unitId][j] = hitsIntersection[unitId][j] && hits[j];
+            }
+        }
+    }
+
+    std::unordered_map<int, double> hitProbabilities;
+    for (const auto&[unitId, hits] : hitsIntersection) {
+        int hitsCount = 0;
+        for (bool isHit : hits) {
+            if (isHit) {
+                ++hitsCount;
+            }
+        }
+        hitProbabilities[unitId] = double(hitsCount) / hitsSize;
+    }
+    return hitProbabilities;
 }
 

@@ -1,14 +1,14 @@
 #include "StrategyGenerator.hpp"
 #include "Util.hpp"
 
-std::vector<UnitAction> StrategyGenerator::getActions(int actionsCount, double move, bool jump, bool jumpDown) {
+std::vector<UnitAction> StrategyGenerator::getActions(int actionsCount, double move, bool jump, bool jumpDown, bool shoot) {
     std::vector<UnitAction> actions;
     for (int i = 0; i < actionsCount; ++i) {
         UnitAction action;
         action.velocity = 10 * move;
         action.jump = jump;
         action.jumpDown = jumpDown;
-        action.shoot = true;
+        action.shoot = shoot;
         action.reload = false;
         action.swapWeapon = false;
         action.plantMine = false;
