@@ -113,7 +113,7 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
     action.aim = aim;
     action.shoot = true;
     action.reload = false;
-    action.swapWeapon = unit.weapon && unit.weapon->typ == ROCKET_LAUNCHER;
+    action.swapWeapon = unit.weapon && unit.weapon->typ != PISTOL;
     action.plantMine = false;
 
     debug.draw(CustomData::Log(
@@ -299,7 +299,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             for (int i = 0; i < actionTicks; ++i) {
                 auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
                 updateAction(sim.units, unit.id, myAction, game, debug);
-                updateAction(sim.units, enemyUnitIds[colorIndex], actionSet, game, debug);
+                updateAction(sim.units, enemyUnitIds[enemyIdx], actionSet, game, debug);
                 params[unit.id] = myAction;
                 params[enemyUnitIds[enemyIdx]] = actionSet;
                 sim.simulate(params);
@@ -337,6 +337,9 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             int microticks = i < 20 ? 5 : 1;
             sim.simulate(params, i == 0 ? 50 : microticks);
         }
+
+//        calculatePathDistance(targetPos)
+
 //        debug.draw(CustomData::Rect(
 //            Vec2Float(sim.units[unit.id].position.x - sim.units[unit.id].size.x / 2, sim.units[unit.id].position.y),
 //            Vec2Float(sim.units[unit.id].size.x, sim.units[unit.id].size.y),
@@ -444,7 +447,7 @@ bool MyStrategy::shouldShoot(Unit unit, const Unit& enemyUnit, Vec2Double aim, c
             if (unit.weapon->typ == ASSAULT_RIFLE && hitProbabilities[u.id] > 0.0) {
                 return true;
             }
-            if (unit.weapon->typ != ASSAULT_RIFLE && hitProbabilities[u.id] > 0.09) {
+            if (unit.weapon->typ != ASSAULT_RIFLE && hitProbabilities[u.id] > 0.19) {
                 return true;
             }
         }
@@ -546,7 +549,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
     for (const auto& event : events1) {
         double timeMultiplier = 1.0;
         for (int i = 0; i < event.tick; ++i) {
-            timeMultiplier *= 0.93;
+            timeMultiplier *= 0.9;
         }
         double eventScore = event.damage * timeMultiplier;
 
@@ -554,17 +557,17 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
             eventScore = -std::min(100 - unit.health, 50.0);
         } else if (!event.real) {
             double prob = event.probability;
-            for (int i = 0; i < event.shootTick; ++i) {
-                if (event.damage == 30 || event.damage == 50) {
-                    prob *= 0.85;
-                } else {
-                    prob *= 0.93;
-                }
-            }
+//            for (int i = 0; i < event.shootTick; ++i) {
+//                if (event.damage == 30 || event.damage == 50) {
+//                    prob *= 0.85;
+//                } else {
+//                    prob *= 0.93;
+//                }
+//            }
             eventScore *= std::min(prob, 1.0);
         }
         if (event.unitId == unitId) {
-            eventScore = -eventScore;
+            eventScore = -1.5 * eventScore;
         } else if (sim1.units.at(event.unitId).playerId == unit.playerId) {
             eventScore = 0;
         }
@@ -577,7 +580,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
     for (const auto& event : events2) {
         double timeMultiplier = 1.0;
         for (int i = 0; i < event.tick; ++i) {
-            timeMultiplier *= 0.93;
+            timeMultiplier *= 0.9;
         }
         double eventScore = event.damage * timeMultiplier;
 
@@ -585,17 +588,17 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
             eventScore = -std::min(100 - unit.health, 50.0);
         } else if (!event.real) {
             double prob = event.probability;
-            for (int i = 0; i < event.shootTick; ++i) {
-                if (event.damage == 30 || event.damage == 50) {
-                    prob *= 0.85;
-                } else {
-                    prob *= 0.93;
-                }
-            }
+//            for (int i = 0; i < event.shootTick; ++i) {
+//                if (event.damage == 30 || event.damage == 50) {
+//                    prob *= 0.85;
+//                } else {
+//                    prob *= 0.93;
+//                }
+//            }
             eventScore *= std::min(prob, 1.0);
         }
         if (event.unitId == unitId) {
-            eventScore = -eventScore;
+            eventScore = -1.5 * eventScore;
         } else if (sim2.units.at(event.unitId).playerId == unit.playerId) {
             eventScore = 0;
         }
@@ -754,7 +757,7 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
             if (nearestWeapon == nullptr ||
                 distanceSqr(unit.position, lootBox.position) <
                 distanceSqr(unit.position, nearestWeapon->position)) {
-                if (std::dynamic_pointer_cast<Item::Weapon>(lootBox.item)->weaponType != ROCKET_LAUNCHER) {
+                if (std::dynamic_pointer_cast<Item::Weapon>(lootBox.item)->weaponType == PISTOL) {
                     nearestWeapon = &lootBox;
                 }
             }
@@ -776,7 +779,7 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
 
     Vec2Double targetPos = unit.position;
     targetImportance = 0.4;
-    if ((!unit.weapon || unit.weapon->typ == ROCKET_LAUNCHER) && nearestWeapon != nullptr) {
+    if ((!unit.weapon || unit.weapon->typ != PISTOL) && nearestWeapon != nullptr) {
         targetPos = nearestWeapon->position;
         targetImportance = 3.5;
     } else if (!healthPacks.empty() && unit.health <= 90.0) {

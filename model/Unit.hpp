@@ -55,6 +55,8 @@ struct DamageEvent {
     bool real;
     double probability;
     int shootTick;
+    double aimAngle;
+    double rawProb;
 
     std::string toString() const {
         auto result = "tick = " + std::to_string(tick)
@@ -63,7 +65,9 @@ struct DamageEvent {
                + ", real = " + (real ? "true" : "false");
         if (!real) {
             result += ", probability = " + std::to_string(probability)
-                      + ", shootTick = " + std::to_string(shootTick);
+                      + ", shootTick = " + std::to_string(shootTick)
+                      + ", aimAngle = " + std::to_string(aimAngle)
+                      + ", rawProb = " + std::to_string(rawProb);
         }
         return result;
     }

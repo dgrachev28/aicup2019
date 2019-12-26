@@ -64,9 +64,9 @@ void Simulation::simulate(std::unordered_map<int, UnitAction> actions, std::opti
             if (simShoot) {
                 simulateShoot(action, unitId);
             }
-            if (simBullets) {
-                simulateHealthPack(unitId);
-            }
+//            if (simBullets) {
+//                simulateHealthPack(unitId);
+//            }
         }
         if (simBullets) {
             simulateBullets();
@@ -248,7 +248,9 @@ void Simulation::simulateHealthPack(int unitId) {
                     double(-game.properties.healthPackHealth),
                     true,
                     0.0,
-                    0
+                    0,
+                    0.0,
+                    0.0
                 });
                 break;
             }
@@ -269,13 +271,19 @@ void Simulation::explode(const Bullet& bullet,
             bulletHits[*unitId][bullet.virtualParams->angleIndex] = true;
         } else {
             units[*unitId].health -= bullet.damage;
+
+            double angle = 0.0;
+            double rawProb = 0.0;
+            double prob = calculateHitProbability(bullet, units[*unitId], angle, rawProb);
             events.push_back(DamageEvent{
                 game.currentTick - startTick,
                 *unitId,
                 bullet.damage,
                 bullet.real,
-                calculateHitProbability(bullet, units[*unitId]),
-                bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick
+                prob,
+                bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick,
+                angle,
+                rawProb
             });
         }
     }
@@ -293,13 +301,19 @@ void Simulation::explode(const Bullet& bullet,
                     bulletHits[*unitId][bullet.virtualParams->angleIndex] = true;
                 } else {
                     units[id].health -= bullet.explosionParams->damage;
+
+                    double angle = 0.0;
+                    double rawProb = 0.0;
+                    double prob = calculateHitProbability(bullet, units[*unitId], angle, rawProb);
                     events.push_back(DamageEvent{
                         game.currentTick - startTick,
                         id,
                         double(bullet.explosionParams->damage),
                         bullet.real,
-                        calculateHitProbability(bullet, unit, true),
-                        bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick
+                        prob,
+                        bullet.real ? 0 : game.currentTick - bullet.virtualParams->shootTick,
+                        angle,
+                        rawProb
                     });
                 }
             }
@@ -307,7 +321,7 @@ void Simulation::explode(const Bullet& bullet,
     }
 }
 
-double Simulation::calculateHitProbability(const Bullet& bullet, const Unit& targetUnit, bool explosion) {
+double Simulation::calculateHitProbability(const Bullet& bullet, const Unit& targetUnit, double& angle, double& rawProb, bool explosion) {
     if (bullet.real) {
         return 1.0;
     }
@@ -322,13 +336,27 @@ double Simulation::calculateHitProbability(const Bullet& bullet, const Unit& tar
     double deltaAngle = deltaAngle1 > deltaAngle2 ? deltaAngle1 : deltaAngle2;
     double spreadAngle = 2 * bullet.virtualParams->spread;
 
-    if (explosion) {
-        if (bullet.unitId == targetUnit.id) {
-            return 0.5;
-        }
-        return 1.0;
+    Vec2Double aim(
+        targetUnit.position.x - shootPosition.x,
+        targetUnit.position.y + targetUnit.size.y / 2 - shootPosition.y
+    );
+
+    angle = fmod(atan2(aim.y, aim.x) + 4 * M_PI, M_PI) * 57.2958;
+    if (angle > 90.0) {
+        angle = 180.0 - angle;
     }
-    return std::min(1.0, deltaAngle / spreadAngle);
+    double shootTicks = game.currentTick - bullet.virtualParams->shootTick;
+
+    double prob = std::min(1.0, deltaAngle / spreadAngle);
+    rawProb = prob;
+    prob *= std::max(0.0, 1 - shootTicks / (12 - (angle / (90.0 / 6))));
+    return prob;
+//    if (explosion) {
+//        if (bullet.unitId == targetUnit.id) {
+//            return 0.5;
+//        }
+//        return 1.0;
+//    }
 }
 
 void Simulation::simulateShoot(const UnitAction& action, int unitId) {

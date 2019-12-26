@@ -35,7 +35,7 @@ private:
 
     void explode(const Bullet& bullet, std::optional<int> unitId);
 
-    double calculateHitProbability(const Bullet& bullet, const Unit& targetUnit, bool explosion = false);
+    double calculateHitProbability(const Bullet& bullet, const Unit& targetUnit, double& angle, double& rawProb, bool explosion = false);
 
     void simulateShoot(const UnitAction& action, int unitId);
 
