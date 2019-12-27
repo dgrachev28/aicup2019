@@ -92,25 +92,12 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
     const Unit* nearestEnemy = nullptr;
     double minDistance = 10000000.0;
     for (const Unit* enemy : enemyUnits) {
-        double distance = 0.0;
-        for (const Unit* my : myUnits) {
-            distance += distanceSqr(my->position, enemy->position);
-        }
+        double distance = calculatePathDistance(unit.position, enemy->position, unit, game, debug);
         if (distance < minDistance) {
             minDistance = distance;
             nearestEnemy = enemy;
         }
     }
-//
-//    for (const Unit& other : game.units) {
-//        if (other.playerId != unit.playerId) {
-//            if (nearestEnemy == nullptr ||
-//                distanceSqr(unit.position, other.position) <
-//                distanceSqr(unit.position, nearestEnemy->position)) {
-//                nearestEnemy = &other;
-//            }
-//        }
-//    }
 
     double targetImportance;
     const auto& targetPos = findTargetPosition(unit, nearestEnemy, game, debug, targetImportance);
@@ -121,36 +108,8 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
     if (nearestEnemy != nullptr && unit.weapon) {
         aim = predictShootAngle2(unit, *nearestEnemy, game, debug);
     }
-    bool jump = targetPos.y > unit.position.y;
-    if (targetPos.x - unit.position.x > 0.1 &&
-        game.level.tiles[size_t(unit.position.x + 1)][size_t(unit.position.y)] ==
-        Tile::WALL) {
-        jump = true;
-    }
-    if (targetPos.x - unit.position.x < -0.1 &&
-        game.level.tiles[size_t(unit.position.x - 1)][size_t(unit.position.y)] ==
-        Tile::WALL) {
-        jump = true;
-    }
-    bool jumpDown = !jump;
-    if (jump && unit.jumpState.maxTime < 0.3 &&
-        game.level.tiles[size_t(unit.position.x)][size_t(unit.position.y - 1)] == Tile::PLATFORM) {
-        jump = false;
-    }
-    double vel = targetPos.x - unit.position.x;
 
-    if (vel > 0) {
-        vel = 10.0;
-    } else {
-        vel = -10.0;
-    }
-    if (fabs(targetPos.x - unit.position.x) < 0.1) {
-        vel = 0.0;
-    }
     UnitAction action;
-    action.velocity = vel;
-    action.jump = jump;
-    action.jumpDown = jumpDown;
     action.aim = aim;
     action.shoot = true;
     action.reload = false;
@@ -176,13 +135,12 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
 
     if (nearestEnemy != nullptr) {
         action.shoot = shouldShoot(unit, *nearestEnemy, aim, game, debug);
-    }
-
-    auto bestAction = avoidBullets(unit, game, targetPos, targetImportance, action, debug);
-    if (bestAction) {
-        action.velocity = bestAction->velocity;
-        action.jump = bestAction->jump;
-        action.jumpDown = bestAction->jumpDown;
+        auto bestAction = avoidBullets(unit, nearestEnemy->id, game, targetPos, targetImportance, action, debug);
+        if (bestAction) {
+            action.velocity = bestAction->velocity;
+            action.jump = bestAction->jump;
+            action.jumpDown = bestAction->jumpDown;
+        }
     }
 
     std::cerr << "ACTUAL ACTION: " << action.toString() << "\n";
@@ -291,6 +249,7 @@ Vec2Double MyStrategy::predictShootAngle2(const Unit& unit, const Unit& enemyUni
 }
 
 std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
+                                                   int enemyUnitId,
                                                    const Game& game,
                                                    const Vec2Double& targetPos,
                                                    double targetImportance,
@@ -300,33 +259,44 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
     std::cerr << "Current unit: " << unit.id << "\n";
     std::cerr << "Target position: (" << targetPos.x << ", " << targetPos.y << ")\n";
     int actionTicks = 45;
-    std::vector<std::vector<UnitAction>> actionSets = {
-        StrategyGenerator::getActions(actionTicks, 1, true, false),
-        StrategyGenerator::getActions(actionTicks, 0, true, false),
-        StrategyGenerator::getActions(actionTicks, -1, true, false),
-        StrategyGenerator::getActions(actionTicks, 1, false, false),
-        StrategyGenerator::getActions(actionTicks, 0, false, false),
-        StrategyGenerator::getActions(actionTicks, -1, false, false),
-        StrategyGenerator::getActions(actionTicks, 1, false, true),
-        StrategyGenerator::getActions(actionTicks, 0, false, true),
-        StrategyGenerator::getActions(actionTicks, -1, false, true)
-    };
-
+    std::vector<std::vector<UnitAction>> actionSets;
+    if (!unit.jumpState.canJump && areSame(unit.jumpState.maxTime, 0.0)) {
+        actionSets = {
+            StrategyGenerator::getActions(actionTicks, 1, false, false),
+            StrategyGenerator::getActions(actionTicks, 0, false, false),
+            StrategyGenerator::getActions(actionTicks, -1, false, false),
+            StrategyGenerator::getActions(actionTicks, 1, false, true),
+            StrategyGenerator::getActions(actionTicks, 0, false, true),
+            StrategyGenerator::getActions(actionTicks, -1, false, true)
+        };
+    } else {
+        actionSets = {
+            StrategyGenerator::getActions(actionTicks, 1, true, false),
+            StrategyGenerator::getActions(actionTicks, 0, true, false),
+            StrategyGenerator::getActions(actionTicks, -1, true, false),
+            StrategyGenerator::getActions(actionTicks, 1, false, false),
+            StrategyGenerator::getActions(actionTicks, 0, false, false),
+            StrategyGenerator::getActions(actionTicks, -1, false, false),
+            StrategyGenerator::getActions(actionTicks, 1, false, true),
+            StrategyGenerator::getActions(actionTicks, 0, false, true),
+            StrategyGenerator::getActions(actionTicks, -1, false, true)
+        };
+    }
 
     std::optional<UnitAction> bestAction;
-
-    std::vector<std::vector<UnitAction>> enemyActionSets;
+//
+//    std::vector<std::vector<UnitAction>> enemyActionSets;
     std::vector<int> enemyUnitIds;
     for (const Unit& u : game.units) {
         if (u.playerId != unit.playerId) {
             enemyUnitIds.push_back(u.id);
-            std::vector<UnitAction> actions = {
-                StrategyGenerator::getActions(1, 1, true, false)[0],
-                StrategyGenerator::getActions(1, -1, true, false)[0],
-                StrategyGenerator::getActions(1, 1, false, true)[0],
-                StrategyGenerator::getActions(1, -1, false, true)[0]
-            };
-            enemyActionSets.push_back(actions);
+//            std::vector<UnitAction> actions = {
+//                StrategyGenerator::getActions(1, 1, true, false)[0],
+//                StrategyGenerator::getActions(1, -1, true, false)[0],
+//                StrategyGenerator::getActions(1, 1, false, true)[0],
+//                StrategyGenerator::getActions(1, -1, false, true)[0]
+//            };
+//            enemyActionSets.push_back(actions);
         }
     }
 
@@ -367,7 +337,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
         double targetDistance = 0.0;
         Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.3), true, true, true, 10);
         for (int i = 0; i < actionTicks; ++i) {
-            updateAction(sim.units, unit.id, actionSet[i], sim.game, debug);
+            updateAction(sim.units, unit.id, enemyUnitId, actionSet[i], sim.game, debug);
             params[unit.id] = actionSet[i];
 
             for (int j = 0; j < enemyUnitIds.size(); ++j) {
@@ -375,7 +345,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
 //                    updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j][bestEnemyActionIndex[j]], sim.game, debug);
 //                    params[enemyUnitIds[j]] = enemyActionSets[j][bestEnemyActionIndex[j]];
 //                } else {
-                    updateAction(sim.units, enemyUnitIds[j], defaultAction, sim.game, debug);
+                    updateAction(sim.units, enemyUnitIds[j], unit.id, defaultAction, sim.game, debug);
                     params[enemyUnitIds[j]] = defaultAction;
 //                }
             }
@@ -621,7 +591,9 @@ void MyStrategy::buildPathGraph(const Unit& unit, const Game& game, Debug& debug
         StrategyGenerator::getActions(1, -1, true, false)[0],
         StrategyGenerator::getActions(1, 1, false, true)[0],
         StrategyGenerator::getActions(1, 0.25, false, true)[0],
+        StrategyGenerator::getActions(1, 0.1, false, true)[0],
         StrategyGenerator::getActions(1, 0, false, true)[0],
+        StrategyGenerator::getActions(1, -0.1, false, true)[0],
         StrategyGenerator::getActions(1, -0.25, false, true)[0],
         StrategyGenerator::getActions(1, -1, false, true)[0],
         StrategyGenerator::getActions(1, 1, false, false)[0],
@@ -650,15 +622,10 @@ void MyStrategy::pathDfs(int x, int y, const std::vector<UnitAction>& actions, c
         sim.units = units;
 
         std::unordered_map<int, UnitAction> params;
-        Vec2Double prevSimPosition = sim.units[unit.id].position;
         for (int tick = 1; tick < 200; ++tick) {
             params[unit.id] = action;
             sim.simulate(params);
             Vec2Double simPosition = sim.units[unit.id].position;
-//            if (areSame(prevSimPosition.x, simPosition.x) && areSame(prevSimPosition.y, simPosition.y)) {
-//                break;
-//            }
-            prevSimPosition = simPosition;
             if ((simPosition.y - int(simPosition.y) < game.properties.unitFallSpeed / 60 + 1e-5 ||
                  game.level.tiles[int(simPosition.x)][int(simPosition.y)] == JUMP_PAD) &&
                 (int(simPosition.y) != y || int(simPosition.x) != x)) {
@@ -731,7 +698,7 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
         }
     }
 
-    if (game.currentTick % 20 == 0) {
+    if (game.currentTick % 10 == 0) {
         for (const Unit& u : game.units) {
             if (u.playerId != unit.playerId) {
                 continue;
@@ -831,7 +798,7 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
         std::cerr << "Best win healthpacks num: " << bestWinHealthPackPathNum << '\n';
         std::cerr << "Target position from paths: " << targetPos.toString() << '\n';
     } else if (nearestEnemy != nullptr) {
-        double desiredDistance = (nearestEnemy->weapon && nearestEnemy->weapon->typ == ROCKET_LAUNCHER) ? 81.0 : 9.0;
+        double desiredDistance = (nearestEnemy->weapon && nearestEnemy->weapon->typ == ROCKET_LAUNCHER) ? 81.0 : 16.0;
         if (distanceSqr(unit.position, nearestEnemy->position) > desiredDistance) {
             targetPos = Vec2Double(nearestEnemy->position.x, nearestEnemy->position.y + nearestEnemy->size.y / 2);
         } else {
@@ -841,13 +808,28 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
     return targetPos;
 }
 
+Vec2Double MyStrategy::findNearestTile(const Vec2Double& tile) {
+    int x = int(tile.x);
+    int y = int(tile.y);
+    for (int radius = 1; radius < 6; ++radius) {
+        for (int i = -radius; i <= radius; ++i) {
+            for (int j = -radius; j <= radius; ++j) {
+                if (isPathFilled[getPathsIndex(Vec2Double(x + i, y + j))]) {
+                    return Vec2Double(x + i, y + j);
+                }
+            }
+        }
+    }
+    std::cerr << "ERROR WITH PATH FINDING\n";
+    return tile;
+}
+
 double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double& dst,
                                          const Unit& unit, const Game& game, Debug& debug) {
     int srcIdx = getPathsIndex(src);
     int dstIdx = getPathsIndex(dst);
     if (!isPathFilled[dstIdx]) {
-        std::cerr << "ERROR WITH PATH FINDING\n";
-        return -1;
+        dstIdx = getPathsIndex(findNearestTile(dst));
     }
     if (isPathFilled[srcIdx]) {
         return paths[srcIdx][dstIdx];
@@ -879,15 +861,10 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
         sim.units[unit.id] = unit;
 
         std::unordered_map<int, UnitAction> params;
-        Vec2Double prevSimPosition = sim.units[unit.id].position;
         for (int tick = 1; tick < 200; ++tick) {
             params[unit.id] = action;
             sim.simulate(params);
             Vec2Double simPosition = sim.units[unit.id].position;
-//            if (areSame(prevSimPosition.x, simPosition.x) && areSame(prevSimPosition.y, simPosition.y)) {
-//                break;
-//            }
-            prevSimPosition = simPosition;
             if ((simPosition.y - int(simPosition.y) < game.properties.unitFallSpeed / 60 + 1e-5 ||
                  game.level.tiles[int(simPosition.x)][int(simPosition.y)] == JUMP_PAD) &&
                 (int(simPosition.y) != unit.position.y || int(simPosition.x) != unit.position.x)) {
@@ -906,37 +883,12 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
     return minPathDistance;
 }
 
-void MyStrategy::updateAction(const std::unordered_map<int, Unit>& units, int unitId, UnitAction& action,
+void MyStrategy::updateAction(const std::unordered_map<int, Unit>& units, int unitId, int enemyUnitId, UnitAction& action,
                               const Game& game, Debug& debug) {
     auto t1 = std::chrono::high_resolution_clock::now();
     const Unit& unit = units.at(unitId);
 
-    std::vector<const Unit*> myUnits;
-    std::vector<const Unit*> enemyUnits;
-    for (const auto& [id, other] : units) {
-        if (other.playerId == unit.playerId) {
-            myUnits.push_back(&other);
-        } else {
-            enemyUnits.push_back(&other);
-        }
-    }
-
-    const Unit* nearestEnemy = nullptr;
-    double minDistance = 10000000.0;
-    for (const Unit* enemy : enemyUnits) {
-        double distance = 0.0;
-        for (const Unit* my : myUnits) {
-            distance += distanceSqr(my->position, enemy->position);
-        }
-        if (distance < minDistance) {
-            minDistance = distance;
-            nearestEnemy = enemy;
-        }
-    }
-    action.aim = Vec2Double(0.0, 0.0);
-    if (nearestEnemy != nullptr) {
-        action.aim = predictShootAngle2(unit, *nearestEnemy, game, debug, false);
-    }
+    action.aim = predictShootAngle2(unit, units.at(enemyUnitId), game, debug, false);
     if (MyStrategy::PERF.find("updateAction") == MyStrategy::PERF.end()) {
         MyStrategy::PERF["updateAction"] = 0;
     }
@@ -970,7 +922,7 @@ std::unordered_map<int, double> MyStrategy::calculateHitProbability(
         std::unordered_map<int, UnitAction> params;
         for (int i = 0; i < actionTicks; ++i) {
             if (myActions[i].shoot) {
-                updateAction(sim.units, unit.id, myActions[i], sim.game, debug);
+                updateAction(sim.units, unit.id, enemyUnit.id, myActions[i], sim.game, debug);
             }
             params[unit.id] = myActions[i];
             if (i == 0) {

@@ -20,6 +20,7 @@ public:
 
     std::optional<UnitAction> avoidBullets(
         const Unit& unit,
+        int enemyUnitId,
         const Game& game,
         const Vec2Double& targetPos,
         double targetImportance,
@@ -73,7 +74,9 @@ public:
 
     double calculatePathDistance(const Vec2Double& src, const Vec2Double& dst, const Unit& unit, const Game& game, Debug& debug);
 
-    void updateAction(const std::unordered_map<int, Unit>& units, int unitId, UnitAction& action, const Game& game, Debug& debug);
+    Vec2Double findNearestTile(const Vec2Double& src);
+
+    void updateAction(const std::unordered_map<int, Unit>& units, int unitId, int enemyUnitId, UnitAction& action, const Game& game, Debug& debug);
 
 private:
     std::shared_ptr<Simulation> simulation;
