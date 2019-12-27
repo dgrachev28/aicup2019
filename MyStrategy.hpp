@@ -12,6 +12,8 @@ class MyStrategy {
 public:
     MyStrategy();
 
+    static std::unordered_map<std::string, int> PERF;
+
     UnitAction getAction(const Unit& unit, const Game& game, Debug& debug);
 
     Vec2Double predictShootAngle2(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug, bool simulateFallDown = true);
@@ -71,14 +73,16 @@ public:
 
     double calculatePathDistance(const Vec2Double& src, const Vec2Double& dst, const Unit& unit, const Game& game, Debug& debug);
 
-    void updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action, const Game& game, Debug& debug);
+    void updateAction(const std::unordered_map<int, Unit>& units, int unitId, UnitAction& action, const Game& game, Debug& debug);
 
 private:
     std::shared_ptr<Simulation> simulation;
     std::optional<Unit> nextUnit;
     std::optional<UnitAction> prevAction;
-    std::unordered_map<int16_t, std::unordered_map<int16_t, int16_t>> paths = std::unordered_map<int16_t, std::unordered_map<int16_t, int16_t>>();
+    std::array<std::array<int16_t, 1200>, 1200> paths;
+    std::array<bool, 1200> isPathFilled;
     std::unordered_map<int, std::optional<LootBox>> unitTargetWeapons;
+    bool pathsBuilt;
 };
 
 struct Damage {

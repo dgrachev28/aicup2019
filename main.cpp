@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <iostream>
 
 class Runner {
 public:
@@ -48,5 +49,8 @@ int main(int argc, char *argv[]) {
   int port = argc < 3 ? 31001 : atoi(argv[2]);
   std::string token = argc < 4 ? "0000000000000000" : argv[3];
   Runner(host, port, token).run();
+  for (const auto&[key, value] : MyStrategy::PERF) {
+    std::cerr << key << ": " << value << " ms\n";
+  }
   return 0;
 }

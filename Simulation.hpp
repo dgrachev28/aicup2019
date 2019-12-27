@@ -21,7 +21,7 @@ public:
         bool calcHitProbability = false
     );
 
-    void simulate(std::unordered_map<int, UnitAction> actions, std::optional<int> microTicks = std::nullopt);
+    void simulate(const std::unordered_map<int, UnitAction>& actions, std::optional<int> microTicks = std::nullopt);
 
 private:
     void move(const UnitAction& action, int unitId);

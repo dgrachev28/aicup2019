@@ -1,19 +1,46 @@
 #include <iostream>
 #include <cmath>
+#include <chrono>
 #include "MyStrategy.hpp"
 #include "Util.hpp"
 #include "StrategyGenerator.hpp"
 
-MyStrategy::MyStrategy() {}
+std::unordered_map<std::string, int> MyStrategy::PERF;
 
+MyStrategy::MyStrategy() {
+    for (auto& p: paths) {
+        p.fill(10000);
+    }
+    isPathFilled.fill(false);
+    pathsBuilt = false;
+}
 
 UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debug) {
-    if (paths.empty()) {
+    if (!pathsBuilt) {
+        auto t1 = std::chrono::high_resolution_clock::now();
         buildPathGraph(unit, game, debug);
+        if (MyStrategy::PERF.find("buildPathGraph") == MyStrategy::PERF.end()) {
+            MyStrategy::PERF["buildPathGraph"] = 0;
+        }
+        MyStrategy::PERF["buildPathGraph"] += std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::high_resolution_clock::now() - t1).count();
+        t1 = std::chrono::high_resolution_clock::now();
         floydWarshall();
-    }
+        if (MyStrategy::PERF.find("floydWarshall") == MyStrategy::PERF.end()) {
+            MyStrategy::PERF["floydWarshall"] = 0;
+        }
+        MyStrategy::PERF["floydWarshall"] += std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::high_resolution_clock::now() - t1).count();
+        pathsBuilt = true;
 
-    std::cerr << "PATHS SIZE:" << paths.size() << '\n';
+        int isPathFilledCount = 0;
+        for (bool isFilled : isPathFilled) {
+            if (isFilled) {
+                ++isPathFilledCount;
+            }
+        }
+        std::cerr << "PATHS SIZE:" << isPathFilledCount << '\n';
+    }
 
     if (simulation) {
         simulation->game.currentTick = game.currentTick;
@@ -291,32 +318,32 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
 
     std::unordered_map<int, UnitAction> params;
 
-    std::vector<int> bestEnemyActionIndex = {0, 0};
-
-    for (int enemyIdx = 0; enemyIdx < enemyUnitIds.size(); ++enemyIdx) {
-        int colorIndex = 0;
-        std::shared_ptr<Simulation> bestEnemySim = nullptr;
-        for (auto& actionSet : enemyActionSets[enemyIdx]) {
-            Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.3), true, true, true, 5);
-            for (int i = 0; i < actionTicks; ++i) {
-                auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
-                updateAction(sim.units, unit.id, myAction, game, debug);
-                updateAction(sim.units, enemyUnitIds[enemyIdx], actionSet, game, debug);
-                params[unit.id] = myAction;
-                params[enemyUnitIds[enemyIdx]] = actionSet;
-                sim.simulate(params);
-            }
-            if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet, enemyActionSets[enemyIdx][bestEnemyActionIndex[enemyIdx]],
-                                                              0.0, 0.0, game,
-                                                              unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
-                bestEnemySim = std::make_shared<Simulation>(sim);
-                bestEnemyActionIndex[enemyIdx] = colorIndex;
-            }
-            ++colorIndex;
-        }
-
-        std::cerr << "=========Best enemy action: " << enemyActionSets[enemyIdx][bestEnemyActionIndex[enemyIdx]].toString() << '\n';
-    }
+//    std::vector<int> bestEnemyActionIndex = {0, 0};
+//
+//    for (int enemyIdx = 0; enemyIdx < enemyUnitIds.size(); ++enemyIdx) {
+//        int colorIndex = 0;
+//        std::shared_ptr<Simulation> bestEnemySim = nullptr;
+//        for (auto& actionSet : enemyActionSets[enemyIdx]) {
+//            Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.3), true, true, true, 5);
+//            for (int i = 0; i < actionTicks; ++i) {
+//                auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
+//                updateAction(sim.units, unit.id, myAction, game, debug);
+//                updateAction(sim.units, enemyUnitIds[enemyIdx], actionSet, game, debug);
+//                params[unit.id] = myAction;
+//                params[enemyUnitIds[enemyIdx]] = actionSet;
+//                sim.simulate(params);
+//            }
+//            if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet, enemyActionSets[enemyIdx][bestEnemyActionIndex[enemyIdx]],
+//                                                              0.0, 0.0, game,
+//                                                              unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
+//                bestEnemySim = std::make_shared<Simulation>(sim);
+//                bestEnemyActionIndex[enemyIdx] = colorIndex;
+//            }
+//            ++colorIndex;
+//        }
+//
+//        std::cerr << "=========Best enemy action: " << enemyActionSets[enemyIdx][bestEnemyActionIndex[enemyIdx]].toString() << '\n';
+//    }
 
     auto defaultAction = StrategyGenerator::getActions(1, 0, false, false)[0];
     bool noEvents = true;
@@ -330,13 +357,13 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             params[unit.id] = actionSet[i];
 
             for (int j = 0; j < enemyUnitIds.size(); ++j) {
-                if (i < 3) {
-                    updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j][bestEnemyActionIndex[j]], sim.game, debug);
-                    params[enemyUnitIds[j]] = enemyActionSets[j][bestEnemyActionIndex[j]];
-                } else {
+//                if (i < 3) {
+//                    updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j][bestEnemyActionIndex[j]], sim.game, debug);
+//                    params[enemyUnitIds[j]] = enemyActionSets[j][bestEnemyActionIndex[j]];
+//                } else {
                     updateAction(sim.units, enemyUnitIds[j], defaultAction, sim.game, debug);
                     params[enemyUnitIds[j]] = defaultAction;
-                }
+//                }
             }
 
             int microticks = i < 20 ? 5 : 1;
@@ -466,70 +493,6 @@ bool MyStrategy::shouldShoot(Unit unit, const Unit& enemyUnit, Vec2Double aim, c
         }
     }
     return false;
-
-//    double aimAngle = atan2(aim.y, aim.x);
-//    int angleStepsRange = 2;
-//    int angleStepsCount = 2 * angleStepsRange + 1;
-//
-//    std::vector<Damage> damages;
-//    for (int i = -angleStepsRange; i <= angleStepsRange; ++i) {
-//        Simulation sim(game, unit.playerId, debug, ColorFloat(0.0, 1.0, 1.0, 0.5), true, true, false, 1);
-//
-//        auto bulletPos = unit.position;
-//        bulletPos.y += unit.size.y / 2;
-//
-//        double angle = aimAngle + unit.weapon->spread * i / 10;
-//        auto bulletVel = Vec2Double(cos(angle) * unit.weapon->params.bullet.speed,
-//                                    sin(angle) * unit.weapon->params.bullet.speed);
-//        sim.bullets = {Bullet(
-//            unit.weapon->typ,
-//            unit.id,
-//            unit.playerId,
-//            bulletPos,
-//            bulletVel,
-//            unit.weapon->params.bullet.damage,
-//            unit.weapon->params.bullet.size,
-//            unit.weapon->params.explosion
-//        )};
-//        std::unordered_map<int, UnitAction> params;
-//        auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
-//        for (int j = 0; j < 40; ++j) {
-//            updateAction(sim.units, enemyUnit.id, myAction, game, debug);
-//            params[enemyUnit.id] = myAction;
-//            sim.simulate(params);
-//            if (sim.bullets.empty()) {
-//                break;
-//            }
-//        }
-//        Damage damage{0.0, 0.0};
-//        for (const Unit& u : game.units) {
-//            if (u.playerId == unit.playerId) {
-//                damage.me += u.health - sim.units[u.id].health;
-//            } else {
-//                damage.enemy += u.health - sim.units[u.id].health;
-//            }
-//        }
-//        damages.push_back(damage);
-//    }
-//    double damageMeCount = 0;
-//    double damageEnemyCount = 0;
-//    for (const Damage& dmg : damages) {
-//        if (dmg.me > 0) {
-//            ++damageMeCount;
-//        }
-//        if (dmg.enemy > 0) {
-//            ++damageEnemyCount;
-//        }
-//    }
-//    std::cerr << "damageMeCount: " << damageMeCount << ", P: " << std::to_string(damageMeCount / angleStepsCount) << '\n';
-//    std::cerr << "damageEnemyCount: " << damageEnemyCount << ", P: " << std::to_string(damageEnemyCount / angleStepsCount) << '\n';
-//    if (damageEnemyCount == 0) {
-//        return false;
-//    }
-////    if ((double(damageEnemyCount) / angleStepsCount) < 0.1) {
-////        return false;
-////    }
-//    return damageMeCount < 0.05 && damageEnemyCount > 0;
 }
 
 int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim2,
@@ -621,7 +584,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 
     std::cerr << "best score: " << score2 << '\n';
 
-    double distDiffScore = (targetDistance1 - targetDistance2) / 10 * targetImportance;
+    double distDiffScore = (targetDistance1 - targetDistance2) / 6 * targetImportance;
     std::cerr << "Dist diff score: " << distDiffScore << '\n';
 //    if (!areSame(score1, score2, targetImportance)) {
     if (score1 - distDiffScore > score2) {
@@ -651,12 +614,12 @@ void MyStrategy::buildPathGraph(const Unit& unit, const Game& game, Debug& debug
 
 void MyStrategy::pathDfs(int x, int y, const std::vector<UnitAction>& actions, const Unit& unit, const Game& game, Debug& debug) {
     Vec2Double pos(x, y);
-    if (paths.find(getPathsIndex(pos)) != paths.end()) {
+    if (isPathFilled[getPathsIndex(pos)]) {
         return;
     }
-    paths[getPathsIndex(pos)] = std::unordered_map<int16_t, int16_t>();
+    isPathFilled[getPathsIndex(pos)] = true;
     for (const auto& action : actions) {
-        Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 1.0, 1.0, 0.3), true, false, false, 3);
+        Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 1.0, 1.0, 0.3), true, false, false, 1);
         sim.units[unit.id].position.x = x + 0.5;
         sim.units[unit.id].position.y = y;
         std::unordered_map<int, Unit> units;
@@ -688,8 +651,7 @@ void MyStrategy::pathDfs(int x, int y, const std::vector<UnitAction>& actions, c
                     double restTime = fabs(int(simPosition.x) + 0.5 - simPosition.x) * 6;
                     int posIdx = getPathsIndex(pos);
                     int simPosIdx = getPathsIndex(simPosition);
-                    if (paths[posIdx].find(simPosIdx) == paths[posIdx].end() ||
-                        tick + std::round(restTime) < paths[posIdx][simPosIdx]) {
+                    if (tick + std::round(restTime) < paths[posIdx][simPosIdx]) {
                         paths[posIdx][simPosIdx] = tick + std::round(restTime);
                         pathDfs(int(simPosition.x), int(simPosition.y), actions, unit, game, debug);
                     }
@@ -701,20 +663,21 @@ void MyStrategy::pathDfs(int x, int y, const std::vector<UnitAction>& actions, c
 }
 
 void MyStrategy::floydWarshall() {
-    for (const auto& [key, value] : paths) {
-        paths[key][key] = 0;
-        for (const auto& [key1, value1] : paths) {
-            if (paths[key].find(key1) == paths[key].end()) {
-                paths[key][key1] = 10000;
-            }
-        }
+    for (int k = 0; k < 1200; ++k) {
+        paths[k][k] = 0;
     }
-
-    for (const auto& [k, valueK] : paths) {
+    for (int k = 0; k < 1200; ++k) {
+        if (!isPathFilled[k]) {
+            continue;
+        }
         std::cerr << k << ' ';
-        for (const auto& [i, valueI] : paths) {
-            for (const auto& [j, valueJ] : paths) {
-                paths[i][j] = std::min<int16_t>(paths[i][j], paths[i][k] + paths[k][j]);
+        for (int i = 0; i < 1200; ++i) {
+            if (isPathFilled[i]) {
+                for (int j = 0; j < 1200; ++j) {
+                    if (isPathFilled[j]) {
+                        paths[i][j] = std::min<int16_t>(paths[i][j], paths[i][k] + paths[k][j]);
+                    }
+                }
             }
         }
     }
@@ -831,7 +794,10 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
         int bestWinHealthPackPathNum = 0;
         double minHealthPackDistanceSum = 200000.0;
 
-        for (const auto& [key, value] : paths) {
+        for (int key = 0; key < 1200; ++key) {
+            if (!isPathFilled[key]) {
+                continue;
+            }
             double sum = 0.0;
             int winHealthPackPathNum = 0;
 
@@ -870,11 +836,11 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
                                          const Unit& unit, const Game& game, Debug& debug) {
     int srcIdx = getPathsIndex(src);
     int dstIdx = getPathsIndex(dst);
-    if (paths.find(dstIdx) == paths.end()) {
+    if (!isPathFilled[dstIdx]) {
         std::cerr << "ERROR WITH PATH FINDING\n";
         return -1;
     }
-    if (paths.find(srcIdx) != paths.end()) {
+    if (isPathFilled[srcIdx]) {
         return paths[srcIdx][dstIdx];
     }
 
@@ -912,7 +878,7 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
             if ((simPosition.y - int(simPosition.y) < game.properties.unitFallSpeed / 60 + 1e-5 ||
                  game.level.tiles[int(simPosition.x)][int(simPosition.y)] == JUMP_PAD) &&
                 (int(simPosition.y) != unit.position.y || int(simPosition.x) != unit.position.x)) {
-                if (paths.find(getPathsIndex(simPosition)) != paths.end()) {
+                if (isPathFilled[getPathsIndex(simPosition)]) {
                     double restTime = fabs(int(simPosition.x) + 0.5 - simPosition.x) * 6;
                     double pathDistance = tick + std::round(restTime) + paths[getPathsIndex(simPosition)][dstIdx];
                     if (pathDistance < minPathDistance) {
@@ -927,10 +893,10 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
     return minPathDistance;
 }
 
-
-void MyStrategy::updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action,
+void MyStrategy::updateAction(const std::unordered_map<int, Unit>& units, int unitId, UnitAction& action,
                               const Game& game, Debug& debug) {
-    const Unit& unit = units[unitId];
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const Unit& unit = units.at(unitId);
 
     std::vector<const Unit*> myUnits;
     std::vector<const Unit*> enemyUnits;
@@ -958,6 +924,11 @@ void MyStrategy::updateAction(std::unordered_map<int, Unit> units, int unitId, U
     if (nearestEnemy != nullptr) {
         action.aim = predictShootAngle2(unit, *nearestEnemy, game, debug, false);
     }
+    if (MyStrategy::PERF.find("updateAction") == MyStrategy::PERF.end()) {
+        MyStrategy::PERF["updateAction"] = 0;
+    }
+    MyStrategy::PERF["updateAction"] += std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::high_resolution_clock::now() - t1).count();
 }
 
 std::unordered_map<int, double> MyStrategy::calculateHitProbability(

@@ -2,7 +2,9 @@
 
 #include "Simulation.hpp"
 #include "Util.hpp"
+#include "MyStrategy.hpp"
 #include <algorithm>
+#include <chrono>
 
 Simulation::Simulation(Game game,
                        int myPlayerId,
@@ -36,7 +38,8 @@ Simulation::Simulation(Game game,
     ticksMultiplier = 1.0 / (game.properties.ticksPerSecond  * microTicks);
 }
 
-void Simulation::simulate(std::unordered_map<int, UnitAction> actions, std::optional<int> microTicks) {
+void Simulation::simulate(const std::unordered_map<int, UnitAction>& actions, std::optional<int> microTicks) {
+    auto t1 = std::chrono::high_resolution_clock::now();
     if (microTicks) {
         ticksMultiplier = 1.0 / (game.properties.ticksPerSecond * *microTicks);
         this->microTicks = *microTicks;
@@ -72,6 +75,11 @@ void Simulation::simulate(std::unordered_map<int, UnitAction> actions, std::opti
             simulateBullets();
         }
     }
+    if (MyStrategy::PERF.find("simulate") == MyStrategy::PERF.end()) {
+        MyStrategy::PERF["simulate"] = 0;
+    }
+    MyStrategy::PERF["simulate"] += std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::high_resolution_clock::now() - t1).count();
 }
 
 void Simulation::move(const UnitAction& action, int unitId) {
