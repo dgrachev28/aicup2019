@@ -72,7 +72,7 @@ public:
 
     Vec2Double findTargetPosition(const Unit& unit, const Unit* nearestEnemy, const Game& game, Debug& debug, double& targetImportance);
 
-    double calculatePathDistance(const Vec2Double& src, const Vec2Double& dst, const Unit& unit, const Game& game, Debug& debug);
+    double calculatePathDistance(const Vec2Double& src, const Vec2Double& dst, const Unit& unit, const Game& game, Debug& debug, Vec2Double& simSrcPosision);
 
     Vec2Double findNearestTile(const Vec2Double& src);
 

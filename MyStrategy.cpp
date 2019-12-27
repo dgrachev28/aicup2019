@@ -16,7 +16,7 @@ MyStrategy::MyStrategy() {
 }
 
 UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debug) {
-    if (!pathsBuilt) {
+        if (!pathsBuilt) {
         auto t1 = std::chrono::high_resolution_clock::now();
         buildPathGraph(unit, game, debug);
         if (MyStrategy::PERF.find("buildPathGraph") == MyStrategy::PERF.end()) {
@@ -42,19 +42,19 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
         std::cerr << "PATHS SIZE:" << isPathFilledCount << '\n';
     }
 
-//    if (isPathFilled[getPathsIndex(unit.position)] && game.currentTick != pathDrawLastTick) {
-//        for (int i = 0; i < 1200; ++i) {
-//            if (isPathFilled[i]) {
-//                Vec2Double tile = fromPathsIndex(i);
-//                debug.draw(CustomData::Rect(
-//                    Vec2Float(tile.x - 0.4, tile.y + 0.4),
-//                    Vec2Float(0.8, 0.8),
-//                    ColorFloat(0.0, 1.0, 0.0, 1.0 - std::max(0.05, 1.0 - paths[getPathsIndex(unit.position)][i] / 200.0))
-//                ));
-//            }
-//        }
-//        pathDrawLastTick = game.currentTick;
-//    }
+    if (isPathFilled[getPathsIndex(unit.position)] && game.currentTick != pathDrawLastTick) {
+        for (int i = 0; i < 1200; ++i) {
+            if (isPathFilled[i]) {
+                Vec2Double tile = fromPathsIndex(i);
+                debug.draw(CustomData::Rect(
+                    Vec2Float(tile.x - 0.4, tile.y + 0.4),
+                    Vec2Float(0.8, 0.8),
+                    ColorFloat(0.0, 1.0, 0.0, 1.0 - std::max(0.05, 1.0 - paths[getPathsIndex(unit.position)][i] / 200.0))
+                ));
+            }
+        }
+        pathDrawLastTick = game.currentTick;
+    }
 
     if (simulation) {
         simulation->game.currentTick = game.currentTick;
@@ -92,7 +92,8 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
     const Unit* nearestEnemy = nullptr;
     double minDistance = 10000000.0;
     for (const Unit* enemy : enemyUnits) {
-        double distance = calculatePathDistance(unit.position, enemy->position, unit, game, debug);
+        Vec2Double simSrcPosition;
+        double distance = calculatePathDistance(unit.position, enemy->position, unit, game, debug, simSrcPosition);
         if (distance < minDistance) {
             minDistance = distance;
             nearestEnemy = enemy;
@@ -350,11 +351,15 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
 //                }
             }
 
+            if (i == 6) {
+                Vec2Double simSrcPosition;
+                targetDistance = calculatePathDistance(sim.units[unit.id].position, targetPos, sim.units[unit.id], sim.game, debug, simSrcPosition);
+                if (getPathsIndex(simSrcPosition) == getPathsIndex(unit.position)) {
+                    targetDistance += 6;
+                }
+            }
             int microticks = i < 20 ? 5 : 1;
             sim.simulate(params, i == 0 ? 50 : microticks);
-            if (i == 6) {
-                targetDistance = calculatePathDistance(sim.units[unit.id].position, targetPos, sim.units[unit.id], sim.game, debug);
-            }
         }
 
 //        debug.draw(CustomData::Rect(
@@ -628,6 +633,7 @@ void MyStrategy::pathDfs(int x, int y, const std::vector<UnitAction>& actions, c
             Vec2Double simPosition = sim.units[unit.id].position;
             if ((simPosition.y - int(simPosition.y) < game.properties.unitFallSpeed / 60 + 1e-5 ||
                  game.level.tiles[int(simPosition.x)][int(simPosition.y)] == JUMP_PAD) &&
+                 !areSame(sim.units[unit.id].jumpState.speed, 20.0) &&
                 (int(simPosition.y) != y || int(simPosition.x) != x)) {
                 if (game.level.tiles[int(simPosition.x)][int(simPosition.y)] != PLATFORM &&
                     (game.level.tiles[int(simPosition.x)][int(simPosition.y)] != EMPTY ||
@@ -688,8 +694,9 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
     std::vector<double> enemyHPDistance;
     for (const LootBox& lootBox : game.lootBoxes) {
         if (std::dynamic_pointer_cast<Item::HealthPack>(lootBox.item)) {
-            double myDistance = calculatePathDistance(unit.position, lootBox.position, unit, game, debug);
-            double enemyDistance = calculatePathDistance(nearestEnemy->position, lootBox.position, *nearestEnemy, game, debug);
+            Vec2Double simSrcPosition;
+            double myDistance = calculatePathDistance(unit.position, lootBox.position, unit, game, debug, simSrcPosition);
+            double enemyDistance = calculatePathDistance(nearestEnemy->position, lootBox.position, *nearestEnemy, game, debug, simSrcPosition);
             healthPacks.push_back(lootBox);
             myHPDistance.push_back(myDistance);
             enemyHPDistance.push_back(enemyDistance);
@@ -723,7 +730,8 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
                     continue;
                 }
 
-                double distance = calculatePathDistance(u.position, weapon.position, u, game, debug);
+                Vec2Double simSrcPosition;
+                double distance = calculatePathDistance(u.position, weapon.position, u, game, debug, simSrcPosition);
                 if (distance < minDistance) {
                     minDistance = distance;
                     unitTargetWeapons[u.id] = weapon;
@@ -825,13 +833,14 @@ Vec2Double MyStrategy::findNearestTile(const Vec2Double& tile) {
 }
 
 double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double& dst,
-                                         const Unit& unit, const Game& game, Debug& debug) {
+                                         const Unit& unit, const Game& game, Debug& debug, Vec2Double& simSrcPosision) {
     int srcIdx = getPathsIndex(src);
     int dstIdx = getPathsIndex(dst);
     if (!isPathFilled[dstIdx]) {
         dstIdx = getPathsIndex(findNearestTile(dst));
     }
     if (isPathFilled[srcIdx]) {
+        simSrcPosision = src;
         return paths[srcIdx][dstIdx];
     }
 
@@ -872,9 +881,12 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
                     double restTime = fabs(int(simPosition.x) + 0.5 - simPosition.x) * 6;
                     double pathDistance = tick + std::round(restTime) + paths[getPathsIndex(simPosition)][dstIdx];
                     if (pathDistance < minPathDistance) {
+                        simSrcPosision = simPosition;
                         minPathDistance = pathDistance;
                     }
-                    break;
+                    if (!areSame(unit.jumpState.speed, 20.0)) {
+                        break;
+                    }
                 }
             }
         }
