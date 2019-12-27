@@ -47,6 +47,8 @@ public:
         const Simulation& sim2,
         const UnitAction& action1,
         const UnitAction& action2,
+        double targetDistance1,
+        double targetDistance2,
         const Game& game,
         const Unit& unit,
         int actionTicks,
@@ -69,9 +71,6 @@ public:
 
     double calculatePathDistance(const Vec2Double& src, const Vec2Double& dst, const Unit& unit, const Game& game, Debug& debug);
 
-    double makeShortestPathStep(const Vec2Double& src, const Vec2Double& dst,
-                                const Unit& unit, const Game& game, Debug& debug);
-
     void updateAction(std::unordered_map<int, Unit> units, int unitId, UnitAction& action, const Game& game, Debug& debug);
 
 private:
@@ -79,6 +78,7 @@ private:
     std::optional<Unit> nextUnit;
     std::optional<UnitAction> prevAction;
     std::unordered_map<int16_t, std::unordered_map<int16_t, int16_t>> paths = std::unordered_map<int16_t, std::unordered_map<int16_t, int16_t>>();
+    std::unordered_map<int, std::optional<LootBox>> unitTargetWeapons;
 };
 
 struct Damage {
