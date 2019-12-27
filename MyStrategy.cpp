@@ -42,6 +42,20 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
         std::cerr << "PATHS SIZE:" << isPathFilledCount << '\n';
     }
 
+//    if (isPathFilled[getPathsIndex(unit.position)] && game.currentTick != pathDrawLastTick) {
+//        for (int i = 0; i < 1200; ++i) {
+//            if (isPathFilled[i]) {
+//                Vec2Double tile = fromPathsIndex(i);
+//                debug.draw(CustomData::Rect(
+//                    Vec2Float(tile.x - 0.4, tile.y + 0.4),
+//                    Vec2Float(0.8, 0.8),
+//                    ColorFloat(0.0, 1.0, 0.0, 1.0 - std::max(0.05, 1.0 - paths[getPathsIndex(unit.position)][i] / 200.0))
+//                ));
+//            }
+//        }
+//        pathDrawLastTick = game.currentTick;
+//    }
+
     if (simulation) {
         simulation->game.currentTick = game.currentTick;
         simulation->bullets = game.bullets;
@@ -723,6 +737,9 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
             }
             double minDistance = 10000.0;
             for (const auto& weapon : weapons) {
+                if (std::dynamic_pointer_cast<Item::Weapon>(weapon.item)->weaponType == ROCKET_LAUNCHER) {
+                    continue;
+                }
                 bool skip = false;
                 for (const auto&[uid, targetWeapon] : unitTargetWeapons) {
                     if (targetWeapon && areSame(targetWeapon->position.x, weapon.position.x) &&
@@ -742,19 +759,6 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
             }
         }
     }
-
-//    const LootBox* nearestWeapon = nullptr;
-//    for (const LootBox& lootBox : game.lootBoxes) {
-//        if (std::dynamic_pointer_cast<Item::Weapon>(lootBox.item)) {
-//            if (nearestWeapon == nullptr ||
-//                distanceSqr(unit.position, lootBox.position) <
-//                distanceSqr(unit.position, nearestWeapon->position)) {
-//                if (std::dynamic_pointer_cast<Item::Weapon>(lootBox.item)->weaponType == PISTOL) {
-//                    nearestWeapon = &lootBox;
-//                }
-//            }
-//        }
-//    }
 
     Vec2Double targetPos = unit.position;
     targetImportance = 0.2;

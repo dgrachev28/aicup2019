@@ -83,6 +83,7 @@ private:
     std::array<bool, 1200> isPathFilled;
     std::unordered_map<int, std::optional<LootBox>> unitTargetWeapons;
     bool pathsBuilt;
+    int pathDrawLastTick;
 };
 
 struct Damage {
