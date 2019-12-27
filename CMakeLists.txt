@@ -8,7 +8,7 @@ if(WIN32)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,undefined,leak -fno-sanitize-recover=all -fsanitize-undefined-trap-on-error -g -O2 -fno-omit-frame-pointer -g")
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,undefined,leak -fno-sanitize-recover=all -fsanitize-undefined-trap-on-error -g -O2 -fno-omit-frame-pointer -g")
 
 file(GLOB HEADERS "*.hpp" "model/*.hpp" "csimplesocket/*.h")
 SET_SOURCE_FILES_PROPERTIES(${HEADERS} PROPERTIES HEADER_FILE_ONLY TRUE)

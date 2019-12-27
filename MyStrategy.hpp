@@ -76,7 +76,7 @@ public:
 
     Vec2Double findNearestTile(const Vec2Double& src);
 
-    void updateAction(const std::unordered_map<int, Unit>& units, int unitId, int enemyUnitId, UnitAction& action, const Game& game, Debug& debug);
+    void updateAction(std::unordered_map<int, Unit> units, int unitId, int enemyUnitId, UnitAction& action, const Game& game, Debug& debug);
 
 private:
     std::shared_ptr<Simulation> simulation;

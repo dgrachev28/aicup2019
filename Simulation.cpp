@@ -312,7 +312,7 @@ void Simulation::explode(const Bullet& bullet,
 
                     double angle = 0.0;
                     double rawProb = 0.0;
-                    double prob = calculateHitProbability(bullet, units[*unitId], angle, rawProb);
+                    double prob = 1.0;
                     events.push_back(DamageEvent{
                         game.currentTick - startTick,
                         id,

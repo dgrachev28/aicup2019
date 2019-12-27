@@ -16,7 +16,7 @@ MyStrategy::MyStrategy() {
 }
 
 UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debug) {
-        if (!pathsBuilt) {
+    if (!pathsBuilt) {
         auto t1 = std::chrono::high_resolution_clock::now();
         buildPathGraph(unit, game, debug);
         if (MyStrategy::PERF.find("buildPathGraph") == MyStrategy::PERF.end()) {
@@ -476,7 +476,7 @@ bool MyStrategy::shouldShoot(Unit unit, const Unit& enemyUnit, Vec2Double aim, c
             if (unit.weapon->typ == ASSAULT_RIFLE && hitProbabilities[u.id] > 0.0) {
                 return true;
             }
-            if (unit.weapon->typ != ASSAULT_RIFLE && hitProbabilities[u.id] > 0.14) {
+            if (unit.weapon->typ != ASSAULT_RIFLE && hitProbabilities[u.id] > 0.0) {
                 return true;
             }
         }
@@ -533,7 +533,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
             eventScore *= std::min(prob, 1.0);
         }
         if (event.unitId == unitId) {
-            eventScore = -1.2 * eventScore;
+            eventScore = -1.5 * eventScore;
         } else if (sim1.units.at(event.unitId).playerId == unit.playerId) {
             eventScore = 0;
         }
@@ -564,7 +564,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
             eventScore *= std::min(prob, 1.0);
         }
         if (event.unitId == unitId) {
-            eventScore = -1.2 * eventScore;
+            eventScore = -1.5 * eventScore;
         } else if (sim2.units.at(event.unitId).playerId == unit.playerId) {
             eventScore = 0;
         }
@@ -895,12 +895,14 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
     return minPathDistance;
 }
 
-void MyStrategy::updateAction(const std::unordered_map<int, Unit>& units, int unitId, int enemyUnitId, UnitAction& action,
+void MyStrategy::updateAction(std::unordered_map<int, Unit> units, int unitId, int enemyUnitId, UnitAction& action,
                               const Game& game, Debug& debug) {
     auto t1 = std::chrono::high_resolution_clock::now();
     const Unit& unit = units.at(unitId);
 
-    action.aim = predictShootAngle2(unit, units.at(enemyUnitId), game, debug, false);
+    if (unit.weapon) {
+        action.aim = predictShootAngle2(unit, units.at(enemyUnitId), game, debug, false);
+    }
     if (MyStrategy::PERF.find("updateAction") == MyStrategy::PERF.end()) {
         MyStrategy::PERF["updateAction"] = 0;
     }
