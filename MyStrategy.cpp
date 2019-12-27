@@ -501,7 +501,7 @@ bool MyStrategy::shouldShoot(Unit unit, const Unit& enemyUnit, Vec2Double aim, c
             if (unit.weapon->typ == ASSAULT_RIFLE && hitProbabilities[u.id] > 0.0) {
                 return true;
             }
-            if (unit.weapon->typ != ASSAULT_RIFLE && hitProbabilities[u.id] > 0.19) {
+            if (unit.weapon->typ != ASSAULT_RIFLE && hitProbabilities[u.id] > 0.14) {
                 return true;
             }
         }
@@ -558,7 +558,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
             eventScore *= std::min(prob, 1.0);
         }
         if (event.unitId == unitId) {
-            eventScore = -1.5 * eventScore;
+            eventScore = -1.2 * eventScore;
         } else if (sim1.units.at(event.unitId).playerId == unit.playerId) {
             eventScore = 0;
         }
@@ -589,7 +589,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
             eventScore *= std::min(prob, 1.0);
         }
         if (event.unitId == unitId) {
-            eventScore = -1.5 * eventScore;
+            eventScore = -1.2 * eventScore;
         } else if (sim2.units.at(event.unitId).playerId == unit.playerId) {
             eventScore = 0;
         }
@@ -613,12 +613,16 @@ void MyStrategy::buildPathGraph(const Unit& unit, const Game& game, Debug& debug
         StrategyGenerator::getActions(1, 1, true, false)[0],
         StrategyGenerator::getActions(1, 0.5, true, false)[0],
         StrategyGenerator::getActions(1, 0.25, true, false)[0],
+        StrategyGenerator::getActions(1, 0.1, true, false)[0],
         StrategyGenerator::getActions(1, 0, true, false)[0],
+        StrategyGenerator::getActions(1, -0.1, true, false)[0],
         StrategyGenerator::getActions(1, -0.25, true, false)[0],
         StrategyGenerator::getActions(1, -0.5, true, false)[0],
         StrategyGenerator::getActions(1, -1, true, false)[0],
         StrategyGenerator::getActions(1, 1, false, true)[0],
+        StrategyGenerator::getActions(1, 0.25, false, true)[0],
         StrategyGenerator::getActions(1, 0, false, true)[0],
+        StrategyGenerator::getActions(1, -0.25, false, true)[0],
         StrategyGenerator::getActions(1, -1, false, true)[0],
         StrategyGenerator::getActions(1, 1, false, false)[0],
         StrategyGenerator::getActions(1, -1, false, false)[0]
@@ -660,7 +664,8 @@ void MyStrategy::pathDfs(int x, int y, const std::vector<UnitAction>& actions, c
                 (int(simPosition.y) != y || int(simPosition.x) != x)) {
                 if (game.level.tiles[int(simPosition.x)][int(simPosition.y)] != PLATFORM &&
                     (game.level.tiles[int(simPosition.x)][int(simPosition.y)] != EMPTY ||
-                     game.level.tiles[int(simPosition.x)][int(simPosition.y - 1)] != EMPTY)) {
+                     (game.level.tiles[int(simPosition.x)][int(simPosition.y - 1)] != EMPTY &&
+                      game.level.tiles[int(simPosition.x)][int(simPosition.y - 1)] != JUMP_PAD))) {
 
                     double restTime = fabs(int(simPosition.x) + 0.5 - simPosition.x) * 6;
                     int posIdx = getPathsIndex(pos);
@@ -852,12 +857,16 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
         StrategyGenerator::getActions(1, 1, true, false)[0],
         StrategyGenerator::getActions(1, 0.5, true, false)[0],
         StrategyGenerator::getActions(1, 0.25, true, false)[0],
+        StrategyGenerator::getActions(1, 0.1, true, false)[0],
         StrategyGenerator::getActions(1, 0, true, false)[0],
+        StrategyGenerator::getActions(1, -0.1, true, false)[0],
         StrategyGenerator::getActions(1, -0.25, true, false)[0],
         StrategyGenerator::getActions(1, -0.5, true, false)[0],
         StrategyGenerator::getActions(1, -1, true, false)[0],
         StrategyGenerator::getActions(1, 1, false, true)[0],
+        StrategyGenerator::getActions(1, 0.25, false, true)[0],
         StrategyGenerator::getActions(1, 0, false, true)[0],
+        StrategyGenerator::getActions(1, -0.25, false, true)[0],
         StrategyGenerator::getActions(1, -1, false, true)[0],
         StrategyGenerator::getActions(1, 1, false, false)[0],
         StrategyGenerator::getActions(1, -1, false, false)[0]

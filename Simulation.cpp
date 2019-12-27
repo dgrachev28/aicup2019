@@ -128,7 +128,7 @@ void Simulation::moveY(const UnitAction& action, int unitId) {
         unit.jumpState.canCancel = false;
     }
     if (!unit.jumpState.canCancel) { // прыжок с батута
-        if (areSame(unit.jumpState.maxTime, 0.0)) {
+        if (unit.jumpState.maxTime <= 0.0) {
             unit.jumpState = JumpState(false, 0.0, 0.0, false);
             fallDown(action, unitId);
         } else {
