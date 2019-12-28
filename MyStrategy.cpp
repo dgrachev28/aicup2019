@@ -172,21 +172,31 @@ std::optional<UnitAction> MyStrategy::doSuicide(const Unit& unit, const Game& ga
     action.plantMine = true;
 
     if (suicide[unit.id]) {
+        suicide[unit.id] = false;
         return action;
     }
 
-    if (unit.jumpState.canJump && (game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == WALL ||
+    if (unit.onGround && unit.jumpState.canJump && (game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == WALL ||
                                    game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == PLATFORM) &&
         unit.weapon && (!unit.weapon->fireTimer || unit.weapon->fireTimer <= 1 / 60.0) && unit.mines > 0) {
 
-        Rect mineExplosion(unit.position.x - 3.0, unit.position.y + 0.25 + 3.0, unit.position.x + 3.0,
-                           unit.position.y + 0.25 - 3.0);
+        double mineRadius = 3.0 - 1.0 / 6 - 0.001;
+        Rect mineExplosion(unit.position.x - mineRadius, unit.position.y + 0.25 + mineRadius,
+                           unit.position.x + mineRadius, unit.position.y + 0.25 - mineRadius);
 
         int myKilled1 = 0;
         int enemyKilled1 = 0;
         int myKilled2 = 0;
         int enemyKilled2 = 0;
+        int myUnitsCount = 0;
+        int enemyUnitsCount = 0;
         for (const Unit& u: game.units) {
+            if (unit.playerId == u.playerId) {
+                ++myUnitsCount;
+            } else {
+                ++enemyUnitsCount;
+            }
+
             if (intersectRects(Rect(u), mineExplosion)) {
                 if (u.health <= 50) {
                     if (unit.playerId == u.playerId) {
