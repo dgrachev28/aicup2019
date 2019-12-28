@@ -16,6 +16,8 @@ public:
 
     UnitAction getAction(const Unit& unit, const Game& game, Debug& debug);
 
+    std::optional<UnitAction> doSuicide(const Unit& unit, const Game& game, Debug& debug);
+
     Vec2Double predictShootAngle2(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug, bool simulateFallDown = true);
 
     std::optional<UnitAction> avoidBullets(
@@ -85,6 +87,7 @@ private:
     std::array<std::array<int16_t, 1200>, 1200> paths;
     std::array<bool, 1200> isPathFilled;
     std::unordered_map<int, std::optional<LootBox>> unitTargetWeapons;
+    std::unordered_map<int, bool> suicide;
     bool pathsBuilt;
     int pathDrawLastTick;
 };

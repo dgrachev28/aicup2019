@@ -42,19 +42,24 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
         std::cerr << "PATHS SIZE:" << isPathFilledCount << '\n';
     }
 
-    if (isPathFilled[getPathsIndex(unit.position)] && game.currentTick != pathDrawLastTick) {
-        for (int i = 0; i < 1200; ++i) {
-            if (isPathFilled[i]) {
-                Vec2Double tile = fromPathsIndex(i);
-                debug.draw(CustomData::Rect(
-                    Vec2Float(tile.x - 0.4, tile.y + 0.4),
-                    Vec2Float(0.8, 0.8),
-                    ColorFloat(0.0, 1.0, 0.0, 1.0 - std::max(0.05, 1.0 - paths[getPathsIndex(unit.position)][i] / 200.0))
-                ));
-            }
-        }
-        pathDrawLastTick = game.currentTick;
+    auto suicideAction = doSuicide(unit, game, debug);
+    if (suicideAction) {
+        return *suicideAction;
     }
+
+//    if (isPathFilled[getPathsIndex(unit.position)] && game.currentTick != pathDrawLastTick) {
+//        for (int i = 0; i < 1200; ++i) {
+//            if (isPathFilled[i]) {
+//                Vec2Double tile = fromPathsIndex(i);
+//                debug.draw(CustomData::Rect(
+//                    Vec2Float(tile.x - 0.4, tile.y + 0.4),
+//                    Vec2Float(0.8, 0.8),
+//                    ColorFloat(0.0, 1.0, 0.0, 1.0 - std::max(0.05, 1.0 - paths[getPathsIndex(unit.position)][i] / 200.0))
+//                ));
+//            }
+//        }
+//        pathDrawLastTick = game.currentTick;
+//    }
 
     if (simulation) {
         simulation->game.currentTick = game.currentTick;
@@ -86,6 +91,12 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
             myUnits.push_back(&other);
         } else {
             enemyUnits.push_back(&other);
+        }
+    }
+
+    if (suicide.empty()) {
+        for (const Unit* myU : myUnits) {
+            suicide[myU->id] = false;
         }
     }
 
@@ -147,6 +158,66 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
     std::cerr << "ACTUAL ACTION: " << action.toString() << "\n";
 
     return action;
+}
+
+std::optional<UnitAction> MyStrategy::doSuicide(const Unit& unit, const Game& game, Debug& debug) {
+    UnitAction action;
+    action.velocity = 0.0;
+    action.jump = false;
+    action.jumpDown = false;
+    action.aim = Vec2Double(0.0, -1.0);
+    action.shoot = true;
+    action.reload = false;
+    action.swapWeapon = false;
+    action.plantMine = true;
+
+    if (suicide[unit.id]) {
+        return action;
+    }
+
+    if (unit.jumpState.canJump && (game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == WALL ||
+                                   game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == PLATFORM) &&
+        unit.weapon && (!unit.weapon->fireTimer || unit.weapon->fireTimer <= 1 / 60.0) && unit.mines > 0) {
+
+        Rect mineExplosion(unit.position.x - 3.0, unit.position.y + 0.25 + 3.0, unit.position.x + 3.0,
+                           unit.position.y + 0.25 - 3.0);
+
+        int myKilled1 = 0;
+        int enemyKilled1 = 0;
+        int myKilled2 = 0;
+        int enemyKilled2 = 0;
+        for (const Unit& u: game.units) {
+            if (intersectRects(Rect(u), mineExplosion)) {
+                if (u.health <= 50) {
+                    if (unit.playerId == u.playerId) {
+                        ++myKilled1;
+                    } else {
+                        ++enemyKilled1;
+                    }
+                }
+                if (unit.mines > 1) {
+                    if (unit.playerId == u.playerId) {
+                        ++myKilled2;
+                    } else {
+                        ++enemyKilled2;
+                    }
+                }
+            }
+        }
+
+        if (enemyKilled1 == 2 || (enemyKilled1 == 1 && myKilled1 == 0)) {
+            return action;
+        }
+        if (enemyKilled2 > 0 && enemyKilled2 >= myKilled2) {
+            suicide[unit.id] = true;
+            action.shoot = false;
+            return action;
+        }
+        if (enemyKilled1 == 1 && myKilled1 == 1) {
+            return action;
+        }
+    }
+    return std::nullopt;
 }
 
 Vec2Double MyStrategy::predictShootAngle2(const Unit& unit, const Unit& enemyUnit, const Game& game, Debug& debug, bool simulateFallDown) {
