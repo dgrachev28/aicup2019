@@ -218,6 +218,18 @@ std::optional<UnitAction> MyStrategy::doSuicide(const Unit& unit, const Game& ga
             }
 
             if (intersectRects(Rect(u), mineExplosion)) {
+                bool enemyOnHealthPack = false;
+                for (const auto& healthPack : game.lootBoxes) {
+                    if (std::dynamic_pointer_cast<Item::HealthPack>(healthPack.item)) {
+                        if (intersectRects(Rect(healthPack), Rect(u))) {
+                            enemyOnHealthPack = true;
+                            break;
+                        }
+                    }
+                }
+                if (enemyOnHealthPack) {
+                    continue;
+                }
                 if (u.health <= 50) {
                     if (unit.playerId == u.playerId) {
                         ++myKilled1;
