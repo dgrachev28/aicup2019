@@ -42,6 +42,25 @@ UnitAction MyStrategy::getAction(const Unit& unit, const Game& game, Debug& debu
         std::cerr << "PATHS SIZE:" << isPathFilledCount << '\n';
     }
 
+    if (game.currentTick % 100 == 0) {
+        int myPoints = 0;
+        int enemyPoints = 0;
+        for (const Player& player : game.players) {
+            if (player.id == unit.playerId) {
+                myPoints += player.score;
+            } else {
+                enemyPoints += player.score;
+            }
+        }
+        if (game.currentTick >= 1000 && myPoints <= enemyPoints && lastSumPoints == myPoints + enemyPoints) {
+            scoreMultiplier += 0.2;
+        } else {
+            scoreMultiplier = -1.5;
+        }
+        lastSumPoints = myPoints + enemyPoints;
+        std::cerr << "score multiplier: " << scoreMultiplier << '\n';
+    }
+
     auto suicideAction = doSuicide(unit, game, debug);
     if (suicideAction) {
         return *suicideAction;
@@ -176,8 +195,9 @@ std::optional<UnitAction> MyStrategy::doSuicide(const Unit& unit, const Game& ga
         return action;
     }
 
-    if (unit.onGround && unit.jumpState.canJump && (game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == WALL ||
-                                   game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == PLATFORM) &&
+    if (unit.onGround && unit.jumpState.canJump &&
+        (game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == WALL ||
+         game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == PLATFORM) &&
         unit.weapon && (!unit.weapon->fireTimer || unit.weapon->fireTimer <= 1 / 60.0) && unit.mines > 0) {
 
         double mineRadius = 3.0 - 1.0 / 6 - 0.001;
@@ -218,12 +238,13 @@ std::optional<UnitAction> MyStrategy::doSuicide(const Unit& unit, const Game& ga
         if (enemyKilled1 == 2 || (enemyKilled1 == 1 && myKilled1 == 0)) {
             return action;
         }
-        if (enemyKilled2 > 0 && enemyKilled2 >= myKilled2) {
+        if (enemyKilled2 == 2 || (enemyKilled2 == 1 && myKilled2 == 0) ||
+            (enemyKilled2 == 1 && myKilled2 == 1 && enemyUnitsCount <= myUnitsCount)) {
             suicide[unit.id] = true;
             action.shoot = false;
             return action;
         }
-        if (enemyKilled1 == 1 && myKilled1 == 1) {
+        if (enemyKilled1 == 1 && myKilled1 == 1 && enemyUnitsCount <= myUnitsCount) {
             return action;
         }
     }
@@ -440,7 +461,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
                 }
             }
             int microticks = i < 20 ? 5 : 1;
-            sim.simulate(params, i == 0 ? 50 : microticks);
+            sim.simulate(params, i == 0 ? 50 : microticks, true);
         }
 
 //        debug.draw(CustomData::Rect(
@@ -614,7 +635,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
             eventScore *= std::min(prob, 1.0);
         }
         if (event.unitId == unitId) {
-            eventScore = -1.5 * eventScore;
+            eventScore = scoreMultiplier * eventScore;
         } else if (sim1.units.at(event.unitId).playerId == unit.playerId) {
             eventScore = 0;
         }
@@ -645,7 +666,7 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
             eventScore *= std::min(prob, 1.0);
         }
         if (event.unitId == unitId) {
-            eventScore = -1.5 * eventScore;
+            eventScore = scoreMultiplier * eventScore;
         } else if (sim2.units.at(event.unitId).playerId == unit.playerId) {
             eventScore = 0;
         }
@@ -825,7 +846,7 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
     targetImportance = 0.2;
     if (!unit.weapon || unit.weapon->typ == ROCKET_LAUNCHER) {
         targetPos = unitTargetWeapons[unit.id]->position;
-        targetImportance = 2.0;
+        targetImportance = 5.0;
     } else if (!healthPacks.empty() && unit.health <= 90.0) {
         LootBox* bestHealthPack = nullptr;
         double minDistance = 10000.0;

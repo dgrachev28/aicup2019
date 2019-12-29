@@ -88,6 +88,10 @@ private:
     std::array<bool, 1200> isPathFilled;
     std::unordered_map<int, std::optional<LootBox>> unitTargetWeapons;
     std::unordered_map<int, bool> suicide;
+    std::unordered_map<int, int> hangTick;
+    std::unordered_map<int, Vec2Double> lastPosition;
+    int lastSumPoints;
+    double scoreMultiplier;
     bool pathsBuilt;
     int pathDrawLastTick;
 };

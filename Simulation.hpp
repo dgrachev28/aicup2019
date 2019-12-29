@@ -21,7 +21,7 @@ public:
         bool calcHitProbability = false
     );
 
-    void simulate(const std::unordered_map<int, UnitAction>& actions, std::optional<int> microTicks = std::nullopt);
+    void simulate(const std::unordered_map<int, UnitAction>& actions, std::optional<int> microTicks = std::nullopt, bool simSuicide = false);
 
 private:
     void move(const UnitAction& action, int unitId);
@@ -32,6 +32,8 @@ private:
     void simulateBullets();
 
     void simulateHealthPack(int unitId);
+
+    void simulateSuicide(int unitId);
 
     void explode(const Bullet& bullet, std::optional<int> unitId);
 

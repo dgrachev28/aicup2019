@@ -5,6 +5,7 @@
 #include "MyStrategy.hpp"
 #include <algorithm>
 #include <chrono>
+#include <unordered_set>
 
 Simulation::Simulation(Game game,
                        int myPlayerId,
@@ -38,7 +39,7 @@ Simulation::Simulation(Game game,
     ticksMultiplier = 1.0 / (game.properties.ticksPerSecond  * microTicks);
 }
 
-void Simulation::simulate(const std::unordered_map<int, UnitAction>& actions, std::optional<int> microTicks) {
+void Simulation::simulate(const std::unordered_map<int, UnitAction>& actions, std::optional<int> microTicks, bool simSuicide) {
     auto t1 = std::chrono::high_resolution_clock::now();
     if (microTicks) {
         ticksMultiplier = 1.0 / (game.properties.ticksPerSecond * *microTicks);
@@ -70,6 +71,9 @@ void Simulation::simulate(const std::unordered_map<int, UnitAction>& actions, st
 //            if (simBullets) {
 //                simulateHealthPack(unitId);
 //            }
+            if (simSuicide) {
+                simulateSuicide(unitId);
+            }
         }
         if (simBullets) {
             simulateBullets();
@@ -266,6 +270,57 @@ void Simulation::simulateHealthPack(int unitId) {
     }
     if (lootBoxIdx) {
         game.lootBoxes.erase(game.lootBoxes.begin() + *lootBoxIdx);
+    }
+}
+
+void Simulation::simulateSuicide(int unitId) {
+    Unit& unit = units[unitId];
+    if (areSame(unit.position.y, int(unit.position.y), 0.01) && unit.jumpState.canJump &&
+        (game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == WALL ||
+         game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == PLATFORM) &&
+        unit.weapon && (!unit.weapon->fireTimer || unit.weapon->fireTimer <= 1 / 60.0) && unit.mines > 0) {
+
+        double mineRadius = 3.0 - 1.0 / 6 - 0.001;
+        Rect mineExplosion(unit.position.x - mineRadius, unit.position.y + 0.25 + mineRadius,
+                           unit.position.x + mineRadius, unit.position.y + 0.25 - mineRadius);
+
+        int myKilled = 0;
+        int myUnitsCount = 0;
+        int enemyUnitsCount = 0;
+        std::unordered_set<int> killedEnemyUnits;
+        for (const Unit& u: game.units) {
+            if (unit.playerId == u.playerId) {
+                ++myUnitsCount;
+            } else {
+                ++enemyUnitsCount;
+            }
+
+            if (intersectRects(Rect(u), mineExplosion)) {
+                if (u.health <= 50 || unit.mines > 1) {
+                    if (unit.playerId == u.playerId) {
+                        ++myKilled;
+                    } else {
+                        killedEnemyUnits.insert(u.id);
+                    }
+                }
+            }
+        }
+
+        if ((killedEnemyUnits.size() == 2 || (killedEnemyUnits.size() == 1 && myKilled == 0) ||
+             (killedEnemyUnits.size() == 1 && myKilled == 1 && enemyUnitsCount <= myUnitsCount))) {
+            for (int killedEnemyUnitId : killedEnemyUnits) {
+                events.push_back(DamageEvent{
+                    game.currentTick - startTick,
+                    killedEnemyUnitId,
+                    100.0,
+                    false,
+                    1.0,
+                    0,
+                    0.0,
+                    1.0
+                });
+            }
+        }
     }
 }
 
