@@ -296,7 +296,7 @@ void Simulation::simulateSuicide(int unitId) {
             }
 
             if (intersectRects(Rect(u), mineExplosion)) {
-                if (u.health <= 50 || unit.mines > 1) {
+                if (u.health <= 50 || unit.mines > 1 || unit.weapon->typ == ROCKET_LAUNCHER) {
                     if (unit.playerId == u.playerId) {
                         ++myKilled;
                     } else {

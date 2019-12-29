@@ -867,7 +867,7 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
     targetImportance = 0.2;
     if (!unit.weapon || unit.weapon->typ == ROCKET_LAUNCHER) {
         targetPos = unitTargetWeapons[unit.id]->position;
-        targetImportance = 5.0;
+        targetImportance = 50.0;
     } else if (!mines.empty() && unit.mines < 2) {
         const LootBox* bestMine = nullptr;
         double minMineDistance = 10000.0;
