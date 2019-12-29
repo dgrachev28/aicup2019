@@ -64,7 +64,7 @@ public:
 
     void buildPathGraph(const Unit& unit, const Game& game, Debug& debug);
 
-    void pathDfs(int x, int y, const std::vector<UnitAction>& actions, const Unit& unit, const Game& game, Debug& debug);
+    void pathDfs(int x, int y, const std::vector<std::vector<UnitAction>>& actions, const Unit& unit, const Game& game, Debug& debug);
 
     void floydWarshall();
 

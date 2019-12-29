@@ -686,30 +686,36 @@ int MyStrategy::compareSimulations(const Simulation& sim1, const Simulation& sim
 }
 
 void MyStrategy::buildPathGraph(const Unit& unit, const Game& game, Debug& debug) {
-    std::vector<UnitAction> actions = {
-        StrategyGenerator::getActions(1, 1, true, false)[0],
-        StrategyGenerator::getActions(1, 0.5, true, false)[0],
-        StrategyGenerator::getActions(1, 0.25, true, false)[0],
-        StrategyGenerator::getActions(1, 0.1, true, false)[0],
-        StrategyGenerator::getActions(1, 0, true, false)[0],
-        StrategyGenerator::getActions(1, -0.1, true, false)[0],
-        StrategyGenerator::getActions(1, -0.25, true, false)[0],
-        StrategyGenerator::getActions(1, -0.5, true, false)[0],
-        StrategyGenerator::getActions(1, -1, true, false)[0],
-        StrategyGenerator::getActions(1, 1, false, true)[0],
-        StrategyGenerator::getActions(1, 0.25, false, true)[0],
-        StrategyGenerator::getActions(1, 0.1, false, true)[0],
-        StrategyGenerator::getActions(1, 0, false, true)[0],
-        StrategyGenerator::getActions(1, -0.1, false, true)[0],
-        StrategyGenerator::getActions(1, -0.25, false, true)[0],
-        StrategyGenerator::getActions(1, -1, false, true)[0],
-        StrategyGenerator::getActions(1, 1, false, false)[0],
-        StrategyGenerator::getActions(1, -1, false, false)[0]
+    std::vector<std::vector<UnitAction>> actions = {
+        StrategyGenerator::getActions(1, 1, true, false),
+        StrategyGenerator::getActions(1, 0.5, true, false),
+        StrategyGenerator::getActions(1, 0.25, true, false),
+        StrategyGenerator::getActions(1, 0.1, true, false),
+        StrategyGenerator::getActions(1, 0, true, false),
+        StrategyGenerator::getActions(1, -0.1, true, false),
+        StrategyGenerator::getActions(1, -0.25, true, false),
+        StrategyGenerator::getActions(1, -0.5, true, false),
+        StrategyGenerator::getActions(1, -1, true, false),
+        StrategyGenerator::getActions(1, 1, false, true),
+        StrategyGenerator::getActions(1, 0.25, false, true),
+        StrategyGenerator::getActions(1, 0.1, false, true),
+        StrategyGenerator::getActions(1, 0, false, true),
+        StrategyGenerator::getActions(1, -0.1, false, true),
+        StrategyGenerator::getActions(1, -0.25, false, true),
+        StrategyGenerator::getActions(1, -1, false, true),
+        StrategyGenerator::getActions(1, 1, false, false),
+        StrategyGenerator::getActions(1, -1, false, false),
+        StrategyGenerator::getActions(6, 1, false, true, StrategyGenerator::getActions(1, 0, false, true)),
+        StrategyGenerator::getActions(6, -1, false, true, StrategyGenerator::getActions(1, 0, false, true)),
+        StrategyGenerator::getActions(9, 1, true, false, StrategyGenerator::getActions(9, 1, false, true)),
+        StrategyGenerator::getActions(9, -1, true, false, StrategyGenerator::getActions(9, -1, false, true)),
+        StrategyGenerator::getActions(6, 0, true, false, StrategyGenerator::getActions(3, 1, true, false, StrategyGenerator::getActions(9, 1, false, true))),
+        StrategyGenerator::getActions(6, 0, true, false, StrategyGenerator::getActions(3, -1, true, false, StrategyGenerator::getActions(9, -1, false, true)))
     };
     pathDfs(int(unit.position.x), int(unit.position.y), actions, unit, game, debug);
 }
 
-void MyStrategy::pathDfs(int x, int y, const std::vector<UnitAction>& actions, const Unit& unit, const Game& game, Debug& debug) {
+void MyStrategy::pathDfs(int x, int y, const std::vector<std::vector<UnitAction>>& actions, const Unit& unit, const Game& game, Debug& debug) {
     Vec2Double pos(x, y);
     if (isPathFilled[getPathsIndex(pos)]) {
         return;
@@ -730,7 +736,7 @@ void MyStrategy::pathDfs(int x, int y, const std::vector<UnitAction>& actions, c
 
         std::unordered_map<int, UnitAction> params;
         for (int tick = 1; tick < 200; ++tick) {
-            params[unit.id] = action;
+            params[unit.id] = tick < action.size() ? action[tick] : action[action.size() - 1];
             sim.simulate(params);
             Vec2Double simPosition = sim.units[unit.id].position;
             if ((simPosition.y - int(simPosition.y) < game.properties.unitFallSpeed / 60 + 1e-5 ||
@@ -936,6 +942,7 @@ Vec2Double MyStrategy::findNearestTile(const Vec2Double& tile) {
 
 double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double& dst,
                                          const Unit& unit, const Game& game, Debug& debug, Vec2Double& simSrcPosision) {
+    auto t1 = std::chrono::high_resolution_clock::now();
     int srcIdx = getPathsIndex(src);
     int dstIdx = getPathsIndex(dst);
     if (!isPathFilled[dstIdx]) {
@@ -986,13 +993,17 @@ double MyStrategy::calculatePathDistance(const Vec2Double& src, const Vec2Double
                         simSrcPosision = simPosition;
                         minPathDistance = pathDistance;
                     }
-                    if (!areSame(unit.jumpState.speed, 20.0)) {
-                        break;
-                    }
+                    break;
                 }
             }
         }
     }
+
+    if (MyStrategy::PERF.find("calculatePathDistance") == MyStrategy::PERF.end()) {
+        MyStrategy::PERF["calculatePathDistance"] = 0;
+    }
+    MyStrategy::PERF["calculatePathDistance"] += std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::high_resolution_clock::now() - t1).count();
 
     return minPathDistance;
 }
