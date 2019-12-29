@@ -798,6 +798,7 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
 
     std::vector<LootBox> healthPacks;
     std::vector<LootBox> weapons;
+    std::vector<LootBox> mines;
     std::vector<double> myHPDistance;
     std::vector<double> enemyHPDistance;
     for (const LootBox& lootBox : game.lootBoxes) {
@@ -810,6 +811,8 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
             enemyHPDistance.push_back(enemyDistance);
         } else if (std::dynamic_pointer_cast<Item::Weapon>(lootBox.item)) {
             weapons.push_back(lootBox);
+        } else if (std::dynamic_pointer_cast<Item::Mine>(lootBox.item)) {
+            mines.push_back(lootBox);
         }
     }
 
@@ -853,6 +856,19 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
     if (!unit.weapon || unit.weapon->typ == ROCKET_LAUNCHER) {
         targetPos = unitTargetWeapons[unit.id]->position;
         targetImportance = 5.0;
+    } else if (!mines.empty() && unit.mines < 2) {
+        const LootBox* bestMine = nullptr;
+        double minMineDistance = 10000.0;
+        for (const LootBox& mine: mines) {
+            Vec2Double simSrcPosition;
+            double mineDistance = calculatePathDistance(unit.position, mine.position, unit, game, debug, simSrcPosition);
+            if (mineDistance < minMineDistance) {
+                minMineDistance = mineDistance;
+                bestMine = &mine;
+            }
+        }
+        targetPos = bestMine->position;
+        targetImportance = 2.0;
     } else if (!healthPacks.empty() && unit.health <= 90.0) {
         LootBox* bestHealthPack = nullptr;
         double minDistance = 10000.0;
