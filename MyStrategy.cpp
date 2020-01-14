@@ -200,7 +200,17 @@ std::optional<UnitAction> MyStrategy::doSuicide(const Unit& unit, const Game& ga
          game.level.tiles[int(unit.position.x)][int(unit.position.y) - 1] == PLATFORM) &&
         unit.weapon && (!unit.weapon->fireTimer || unit.weapon->fireTimer <= 1 / 60.0) && unit.mines > 0) {
 
-        double mineRadius = 3.0 - 1.0 / 6 - 0.001;
+        int myScore = 0;
+        int enemyScore = 0;
+        for (const Player& player: game.players) {
+            if (player.id == unit.playerId) {
+                myScore = player.score;
+            } else {
+                enemyScore = player.score;
+            }
+        }
+
+        double mineRadius = 3.0 - 2.0 / 6 - 0.001;
         Rect mineExplosion(unit.position.x - mineRadius, unit.position.y + 0.25 + mineRadius,
                            unit.position.x + mineRadius, unit.position.y + 0.25 - mineRadius);
 
@@ -210,6 +220,8 @@ std::optional<UnitAction> MyStrategy::doSuicide(const Unit& unit, const Game& ga
         int enemyKilled2 = 0;
         int myUnitsCount = 0;
         int enemyUnitsCount = 0;
+        double myDamage = 0;
+        double enemyDamage = 0;
         for (const Unit& u: game.units) {
             if (unit.playerId == u.playerId) {
                 ++myUnitsCount;
@@ -233,30 +245,43 @@ std::optional<UnitAction> MyStrategy::doSuicide(const Unit& unit, const Game& ga
                 if (u.health <= 50) {
                     if (unit.playerId == u.playerId) {
                         ++myKilled1;
+                        myDamage += u.health;
                     } else {
                         ++enemyKilled1;
+                        enemyDamage += u.health;
                     }
                 }
                 if (unit.mines > 1) {
                     if (unit.playerId == u.playerId) {
                         ++myKilled2;
+                        myDamage += u.health;
                     } else {
                         ++enemyKilled2;
+                        enemyDamage += u.health;
                     }
                 }
             }
         }
 
         if (enemyKilled1 == 2 || (enemyKilled1 == 1 && myKilled1 == 0)) {
+            if (enemyKilled1 == enemyUnitsCount && myKilled1 == myUnitsCount && myScore + enemyDamage <= enemyScore + myDamage) {
+                return std::nullopt;
+            }
             return action;
         }
         if (enemyKilled2 == 2 || (enemyKilled2 == 1 && myKilled2 == 0) ||
             (enemyKilled2 == 1 && myKilled2 == 1 && enemyUnitsCount <= myUnitsCount)) {
+            if (enemyKilled2 == enemyUnitsCount && myKilled2 == myUnitsCount && myScore + enemyDamage <= enemyScore + myDamage) {
+                return std::nullopt;
+            }
             suicide[unit.id] = true;
             action.shoot = false;
             return action;
         }
         if (enemyKilled1 == 1 && myKilled1 == 1 && enemyUnitsCount <= myUnitsCount) {
+            if (enemyKilled1 == enemyUnitsCount && myKilled1 == myUnitsCount && myScore + enemyDamage <= enemyScore + myDamage) {
+                return std::nullopt;
+            }
             return action;
         }
     }
@@ -400,49 +425,49 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
 
     std::optional<UnitAction> bestAction;
 //
-//    std::vector<std::vector<UnitAction>> enemyActionSets;
+    std::vector<std::vector<UnitAction>> enemyActionSets;
     std::vector<int> enemyUnitIds;
     for (const Unit& u : game.units) {
         if (u.playerId != unit.playerId) {
             enemyUnitIds.push_back(u.id);
-//            std::vector<UnitAction> actions = {
-//                StrategyGenerator::getActions(1, 1, true, false)[0],
-//                StrategyGenerator::getActions(1, -1, true, false)[0],
-//                StrategyGenerator::getActions(1, 1, false, true)[0],
-//                StrategyGenerator::getActions(1, -1, false, true)[0]
-//            };
-//            enemyActionSets.push_back(actions);
+            std::vector<UnitAction> actions = {
+                StrategyGenerator::getActions(1, 1, true, false)[0],
+                StrategyGenerator::getActions(1, -1, true, false)[0],
+                StrategyGenerator::getActions(1, 1, false, true)[0],
+                StrategyGenerator::getActions(1, -1, false, true)[0]
+            };
+            enemyActionSets.push_back(actions);
         }
     }
 
     std::unordered_map<int, UnitAction> params;
 
-//    std::vector<int> bestEnemyActionIndex = {0, 0};
-//
-//    for (int enemyIdx = 0; enemyIdx < enemyUnitIds.size(); ++enemyIdx) {
-//        int colorIndex = 0;
-//        std::shared_ptr<Simulation> bestEnemySim = nullptr;
-//        for (auto& actionSet : enemyActionSets[enemyIdx]) {
-//            Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.3), true, true, true, 5);
-//            for (int i = 0; i < actionTicks; ++i) {
-//                auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
-//                updateAction(sim.units, unit.id, myAction, game, debug);
-//                updateAction(sim.units, enemyUnitIds[enemyIdx], actionSet, game, debug);
-//                params[unit.id] = myAction;
-//                params[enemyUnitIds[enemyIdx]] = actionSet;
-//                sim.simulate(params);
-//            }
-//            if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet, enemyActionSets[enemyIdx][bestEnemyActionIndex[enemyIdx]],
-//                                                              0.0, 0.0, game,
-//                                                              unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
-//                bestEnemySim = std::make_shared<Simulation>(sim);
-//                bestEnemyActionIndex[enemyIdx] = colorIndex;
-//            }
-//            ++colorIndex;
-//        }
-//
-//        std::cerr << "=========Best enemy action: " << enemyActionSets[enemyIdx][bestEnemyActionIndex[enemyIdx]].toString() << '\n';
-//    }
+    std::vector<int> bestEnemyActionIndex = {0, 0};
+
+    for (int enemyIdx = 0; enemyIdx < enemyUnitIds.size(); ++enemyIdx) {
+        int colorIndex = 0;
+        std::shared_ptr<Simulation> bestEnemySim = nullptr;
+        for (auto& actionSet : enemyActionSets[enemyIdx]) {
+            Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.3), true, true, true, 5);
+            for (int i = 0; i < actionTicks; ++i) {
+                auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
+                updateAction(sim.units, unit.id, enemyUnitIds[enemyIdx], myAction, game, debug);
+                updateAction(sim.units, enemyUnitIds[enemyIdx], unit.id, actionSet, game, debug);
+                params[unit.id] = myAction;
+                params[enemyUnitIds[enemyIdx]] = actionSet;
+                sim.simulate(params);
+            }
+            if (bestEnemySim == nullptr || compareSimulations(sim, *bestEnemySim, actionSet, enemyActionSets[enemyIdx][bestEnemyActionIndex[enemyIdx]],
+                                                              0.0, 0.0, game,
+                                                              unit, actionTicks, unit.position, 0.0, targetAction) < 0) {
+                bestEnemySim = std::make_shared<Simulation>(sim);
+                bestEnemyActionIndex[enemyIdx] = colorIndex;
+            }
+            ++colorIndex;
+        }
+
+        std::cerr << "=========Best enemy action: " << enemyActionSets[enemyIdx][bestEnemyActionIndex[enemyIdx]].toString() << '\n';
+    }
 
     auto defaultAction = StrategyGenerator::getActions(1, 0, false, false)[0];
     bool noEvents = true;
@@ -456,13 +481,13 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
             params[unit.id] = actionSet[i];
 
             for (int j = 0; j < enemyUnitIds.size(); ++j) {
-//                if (i < 3) {
-//                    updateAction(sim.units, enemyUnitIds[j], enemyActionSets[j][bestEnemyActionIndex[j]], sim.game, debug);
-//                    params[enemyUnitIds[j]] = enemyActionSets[j][bestEnemyActionIndex[j]];
-//                } else {
+                if (i < 4) {
+                    updateAction(sim.units, enemyUnitIds[j], unit.id, enemyActionSets[j][bestEnemyActionIndex[j]], sim.game, debug);
+                    params[enemyUnitIds[j]] = enemyActionSets[j][bestEnemyActionIndex[j]];
+                } else {
                     updateAction(sim.units, enemyUnitIds[j], unit.id, defaultAction, sim.game, debug);
                     params[enemyUnitIds[j]] = defaultAction;
-//                }
+                }
             }
 
             if (i == 6) {
@@ -472,8 +497,8 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
                     targetDistance += 6;
                 }
             }
-            int microticks = i < 20 ? 5 : 1;
-            sim.simulate(params, i == 0 ? 50 : microticks, true);
+            int microticks = i < 20 ? 15 : 1;
+            sim.simulate(params, i < 3 ? 50 : microticks, true);
         }
 
 //        debug.draw(CustomData::Rect(
@@ -867,7 +892,7 @@ Vec2Double MyStrategy::findTargetPosition(const Unit& unit, const Unit* nearestE
     targetImportance = 0.2;
     if (!unit.weapon || unit.weapon->typ == ROCKET_LAUNCHER) {
         targetPos = unitTargetWeapons[unit.id]->position;
-        targetImportance = 50.0;
+        targetImportance = 100.0;
     } else if (!mines.empty() && unit.mines < 2) {
         const LootBox* bestMine = nullptr;
         double minMineDistance = 10000.0;

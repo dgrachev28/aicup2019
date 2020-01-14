@@ -287,6 +287,8 @@ void Simulation::simulateSuicide(int unitId) {
         int myKilled = 0;
         int myUnitsCount = 0;
         int enemyUnitsCount = 0;
+        double myDamage = 0.0;
+        double enemyDamage = 0.0;
         std::unordered_set<int> killedEnemyUnits;
         for (const Unit& u: game.units) {
             if (unit.playerId == u.playerId) {
@@ -299,15 +301,31 @@ void Simulation::simulateSuicide(int unitId) {
                 if (u.health <= 50 || unit.mines > 1 || unit.weapon->typ == ROCKET_LAUNCHER) {
                     if (unit.playerId == u.playerId) {
                         ++myKilled;
+                        myDamage += unit.health;
                     } else {
                         killedEnemyUnits.insert(u.id);
+                        enemyDamage += unit.health;
                     }
                 }
             }
         }
 
+        int myScore = 0;
+        int enemyScore = 0;
+        for (const Player& player: game.players) {
+            if (player.id == unit.playerId) {
+                myScore = player.score;
+            } else {
+                enemyScore = player.score;
+            }
+        }
+
         if ((killedEnemyUnits.size() == 2 || (killedEnemyUnits.size() == 1 && myKilled == 0) ||
              (killedEnemyUnits.size() == 1 && myKilled == 1 && enemyUnitsCount <= myUnitsCount))) {
+
+            if (killedEnemyUnits.size() == enemyUnitsCount && myKilled == myUnitsCount && myScore + enemyDamage <= enemyScore + myDamage) {
+                return;
+            }
             for (int killedEnemyUnitId : killedEnemyUnits) {
                 events.push_back(DamageEvent{
                     game.currentTick - startTick,
@@ -333,7 +351,7 @@ void Simulation::explode(const Bullet& bullet,
         if (calcHitProbability && !bullet.real) {
             bulletHits[*unitId][bullet.virtualParams->angleIndex] = true;
         } else {
-            units[*unitId].health -= bullet.damage;
+//            units[*unitId].health -= bullet.damage;
 
             double angle = 0.0;
             double rawProb = 0.0;
@@ -363,7 +381,7 @@ void Simulation::explode(const Bullet& bullet,
                 if (calcHitProbability && !bullet.real) {
                     bulletHits[*unitId][bullet.virtualParams->angleIndex] = true;
                 } else {
-                    units[id].health -= bullet.explosionParams->damage;
+//                    units[id].health -= bullet.explosionParams->damage;
 
                     double angle = 0.0;
                     double rawProb = 0.0;
