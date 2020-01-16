@@ -60,6 +60,13 @@ void Simulation::simulate(const std::unordered_map<int, UnitAction>& actions, st
             *(weapon.lastAngle) = aimAngle;
         }
     }
+
+    for (const auto& [unitId, action] : actions) {
+        if (simSuicide) {
+            simulateSuicide(unitId);
+        }
+    }
+
     for (int i = 0; i < this->microTicks; ++i) {
         for (const auto& [unitId, action] : actions) {
             if (simMove) {
@@ -71,14 +78,12 @@ void Simulation::simulate(const std::unordered_map<int, UnitAction>& actions, st
 //            if (simBullets) {
 //                simulateHealthPack(unitId);
 //            }
-            if (simSuicide) {
-                simulateSuicide(unitId);
-            }
         }
         if (simBullets) {
             simulateBullets();
         }
     }
+
     if (MyStrategy::PERF.find("simulate") == MyStrategy::PERF.end()) {
         MyStrategy::PERF["simulate"] = 0;
     }
@@ -323,7 +328,7 @@ void Simulation::simulateSuicide(int unitId) {
         if ((killedEnemyUnits.size() == 2 || (killedEnemyUnits.size() == 1 && myKilled == 0) ||
              (killedEnemyUnits.size() == 1 && myKilled == 1 && enemyUnitsCount <= myUnitsCount))) {
 
-            if (killedEnemyUnits.size() == enemyUnitsCount && myKilled == myUnitsCount && myScore + enemyDamage <= enemyScore + myDamage) {
+            if (killedEnemyUnits.size() == enemyUnitsCount && myKilled == myUnitsCount && myScore + enemyDamage <= enemyScore) {
                 return;
             }
             for (int killedEnemyUnitId : killedEnemyUnits) {

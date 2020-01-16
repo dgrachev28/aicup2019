@@ -264,14 +264,14 @@ std::optional<UnitAction> MyStrategy::doSuicide(const Unit& unit, const Game& ga
         }
 
         if (enemyKilled1 == 2 || (enemyKilled1 == 1 && myKilled1 == 0)) {
-            if (enemyKilled1 == enemyUnitsCount && myKilled1 == myUnitsCount && myScore + enemyDamage <= enemyScore + myDamage) {
+            if (enemyKilled1 == enemyUnitsCount && myKilled1 == myUnitsCount && myScore + enemyDamage <= enemyScore) {
                 return std::nullopt;
             }
             return action;
         }
         if (enemyKilled2 == 2 || (enemyKilled2 == 1 && myKilled2 == 0) ||
             (enemyKilled2 == 1 && myKilled2 == 1 && enemyUnitsCount <= myUnitsCount)) {
-            if (enemyKilled2 == enemyUnitsCount && myKilled2 == myUnitsCount && myScore + enemyDamage <= enemyScore + myDamage) {
+            if (enemyKilled2 == enemyUnitsCount && myKilled2 == myUnitsCount && myScore + enemyDamage <= enemyScore) {
                 return std::nullopt;
             }
             suicide[unit.id] = true;
@@ -279,7 +279,7 @@ std::optional<UnitAction> MyStrategy::doSuicide(const Unit& unit, const Game& ga
             return action;
         }
         if (enemyKilled1 == 1 && myKilled1 == 1 && enemyUnitsCount <= myUnitsCount) {
-            if (enemyKilled1 == enemyUnitsCount && myKilled1 == myUnitsCount && myScore + enemyDamage <= enemyScore + myDamage) {
+            if (enemyKilled1 == enemyUnitsCount && myKilled1 == myUnitsCount && myScore + enemyDamage <= enemyScore) {
                 return std::nullopt;
             }
             return action;
@@ -448,7 +448,7 @@ std::optional<UnitAction> MyStrategy::avoidBullets(const Unit& unit,
         int colorIndex = 0;
         std::shared_ptr<Simulation> bestEnemySim = nullptr;
         for (auto& actionSet : enemyActionSets[enemyIdx]) {
-            Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.3), true, true, true, 5);
+            Simulation sim(game, unit.playerId, debug, ColorFloat(1.0, 0.0, 0.0, 0.3), true, true, true, 3);
             for (int i = 0; i < actionTicks; ++i) {
                 auto myAction = StrategyGenerator::getActions(1, 0, false, false)[0];
                 updateAction(sim.units, unit.id, enemyUnitIds[enemyIdx], myAction, game, debug);
